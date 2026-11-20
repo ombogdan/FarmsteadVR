@@ -436,6 +436,16 @@ public partial class FarmPrototype
     {
         Transform t = old.transform;
         Vector3 start = t.localPosition;
+        // A hammer appears at the closest spot of the thing and knocks along with the sounds.
+        Renderer[] parts = old.GetComponentsInChildren<Renderer>();
+        if (parts.Length > 0)
+        {
+            Bounds around = parts[0].bounds;
+            foreach (Renderer part in parts) around.Encapsulate(part.bounds);
+            Vector3 eye = playerCamera.transform.position;
+            Vector3 hit = around.ClosestPoint(new Vector3(eye.x, Mathf.Clamp(eye.y - 0.3f, around.min.y + 0.3f, around.max.y), eye.z));
+            StartCoroutine(HammerKnocks(hit, 3, 0.2f));
+        }
         const float shakeTime = 0.6f;
         float nextKnock = 0f;
         int knocks = 0;
@@ -482,7 +492,10 @@ public partial class FarmPrototype
                 {
                     popped[i] = true;
                     if (i % 2 == 0) // not every part, so it doesn't turn into noise
+                    {
                         FarmAudio.Play("pop", root.GetChild(i).position, 0.8f, 0.9f + 0.4f * i / Mathf.Max(1, count - 1));
+                        StartCoroutine(Puff(root.TransformPoint(finalPosition[i]), 0.35f)); // a little dust where it lands
+                    }
                 }
                 float pop = EaseOutBack(Mathf.Clamp01((t - i * delayBetweenParts) / popTime));
                 Transform part = root.GetChild(i);

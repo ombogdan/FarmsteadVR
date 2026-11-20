@@ -18,6 +18,7 @@ public class Grazer : MonoBehaviour
     public bool pecks;                            // chickens peck quickly instead of grazing
     public float curiousDistance = 2.5f;          // stops and looks at you this close (0 = never)
     public Transform head;
+    public Rect[] avoid;                          // x/z areas it never walks through (the coop, garden beds...)
 
     readonly Queue<Vector3> route = new Queue<Vector3>();
     Vector3 wanderTarget;
@@ -43,10 +44,10 @@ public class Grazer : MonoBehaviour
         foreach (Vector3 p in points) route.Enqueue(p);
     }
 
-    // Walks there and eats for a while (hens at the feeder).
-    public void EatAt(Vector3 point, float seconds)
+    // Walks there (through the given points) and eats for a while (hens at the feeder).
+    public void EatAt(float seconds, params Vector3[] points)
     {
-        GoVia(point);
+        GoVia(points);
         mealAfterRoute = seconds;
     }
 
@@ -150,8 +151,33 @@ public class Grazer : MonoBehaviour
         transform.rotation = Quaternion.Slerp(transform.rotation, want, Time.deltaTime * turnSpeed);
     }
 
+    // A random spot in its area that it can walk to in a straight line without going through
+    // anything in "avoid". If none is found, it stays and grazes where it is.
     void PickWanderTarget()
     {
-        wanderTarget = new Vector3(Random.Range(areaMin.x, areaMax.x), transform.position.y, Random.Range(areaMin.y, areaMax.y));
+        Vector2 from = new Vector2(transform.position.x, transform.position.z);
+        for (int attempt = 0; attempt < 12; attempt++)
+        {
+            Vector2 to = new Vector2(Random.Range(areaMin.x, areaMax.x), Random.Range(areaMin.y, areaMax.y));
+            if (!PathBlocked(from, to))
+            {
+                wanderTarget = new Vector3(to.x, transform.position.y, to.y);
+                return;
+            }
+        }
+        wanderTarget = transform.position;
+    }
+
+    bool PathBlocked(Vector2 from, Vector2 to)
+    {
+        if (avoid == null) return false;
+        int steps = Mathf.CeilToInt(Vector2.Distance(from, to) / 0.2f) + 1;
+        foreach (Rect area in avoid)
+        {
+            if (area.Contains(from)) continue; // already inside (e.g. leaving the coop): let it walk out
+            for (int i = 0; i <= steps; i++)
+                if (area.Contains(Vector2.Lerp(from, to, (float)i / steps))) return true;
+        }
+        return false;
     }
 }

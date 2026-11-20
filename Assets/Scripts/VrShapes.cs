@@ -23,8 +23,13 @@ public static class VrShapes
             collider.enabled = false;
             Object.Destroy(collider);
         }
+        Renderer renderer = shape.GetComponent<Renderer>();
         Material material = LoadMaterial(materialName);
-        if (material != null) shape.GetComponent<Renderer>().sharedMaterial = material;
+        if (material != null) renderer.sharedMaterial = material;
+        // Helpers never cast shadows: the sun disc in the sky used to throw a 14 m round shadow
+        // exactly onto the player (it always hangs between you and the sun).
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
         return shape;
     }
 

@@ -17,10 +17,18 @@ public partial class FarmPrototype
     bool firstEggLaid;
     float firstEggAt;
 
+    bool coopUpgraded;     // bought from Marquis: 4 more nests and room for 4 more hens
+    GameObject coopUpgrade;
+
+    int HenLimit => coopUpgraded ? hens.Count : Mathf.Min(hens.Count, FarmWorldBuilder.HensBeforeUpgrade);
+    int NestsInUse => coopUpgraded ? nests.Length : FarmWorldBuilder.NestCount;
+
     void FindEggParts()
     {
-        nests = new Transform[FarmWorldBuilder.NestCount];
-        for (int i = 0; i < nests.Length; i++) nests[i] = repairedCoop.transform.Find("Nest Spot " + i);
+        coopUpgrade = Find("Coop Upgrade");
+        nests = new Transform[FarmWorldBuilder.NestCount * 2]; // the first 4 below, 4 more on the upper shelf
+        for (int i = 0; i < nests.Length; i++)
+            nests[i] = (i < FarmWorldBuilder.NestCount ? repairedCoop.transform : coopUpgrade.transform).Find("Nest Spot " + i);
         nestEggs = new GameObject[nests.Length];
         eggTemplate = Find("Egg Template");
         itemLooks["egg"] = eggTemplate;
@@ -65,8 +73,8 @@ public partial class FarmPrototype
 
     void LayEgg(int henIndex)
     {
-        int nest = System.Array.IndexOf(nestEggs, null); // a free nest
-        if (nest < 0) return;                            // all nests are full: collect the eggs!
+        int nest = System.Array.IndexOf(nestEggs, null, 0, NestsInUse); // a free nest
+        if (nest < 0) return;                                          // all nests are full: collect the eggs!
         SpawnEgg(nest);
         FarmAudio.Play("pop", nests[nest].position, 0.7f, 1.3f);
 
@@ -100,7 +108,10 @@ public partial class FarmPrototype
         if (nest >= 0) nestEggs[nest] = null;
         FarmAudio.Play("pickup", egg.transform.position, 0.8f, 1.2f);
         Highlight(egg, false);
-        Destroy(egg.gameObject);
+        Transform ring = egg.transform.Find("Glow Ring");
+        if (ring != null) ring.gameObject.SetActive(false);
+        Destroy(egg); // no longer something to take...
+        StartCoroutine(FlyToHand(egg.transform, 0.45f)); // ...it flies into your hand
         AddItem("egg");
 
         if (stage == Stage.WaitEggs) MarquisArrives(); // -> stage 4 (FarmPrototype.Shop.cs)
@@ -130,11 +141,13 @@ public partial class FarmPrototype
         int spot = 0;
         foreach (Grazer bird in ActiveBirds())
         {
-            bird.GoVia(FarmWorldBuilder.CoopDoorOutside, FarmWorldBuilder.CoopDoorInside, FarmWorldBuilder.SleepSpot(spot++));
+            // around the coop (never through its walls), in through the door, to its spot
+            bird.GoVia(FarmWorldBuilder.AroundCoop(bird.transform.position,
+                FarmWorldBuilder.CoopDoorOutside, FarmWorldBuilder.CoopDoorInside, FarmWorldBuilder.SleepSpot(spot++)));
             bird.SetSleeping(true);
         }
         goatGrazer.SetSleeping(true);
-        Say("Вечоріє… Кури йдуть спати в курник. На сіні біля стодоли можна поспати до ранку.", 8f);
+        Say("Вечоріє… Кури йдуть спати в курник. А тебе чекає ліжко в будинку діда Панаса.", 8f);
         SaveGame();
     }
 
@@ -148,11 +161,38 @@ public partial class FarmPrototype
             bird.SetSleeping(false);
         }
         goatGrazer.SetSleeping(false);
-        if (zhora.activeSelf) FarmAudio.Play("rooster_crow", zhora.transform.position + Vector3.up * 0.5f, 1f, 1f, 8f);
         for (int i = 0; i < hensBought; i++) henNextLay[i] = Time.time + Random.Range(8f, 30f);
         ChoresOnMorning(); // the feeder is empty again
-        Say("Ранок! День " + dayNight.day + ". Кукуріку! Курочки голодні — насип зерна в годівницю.", 6f);
+        StartCoroutine(MorningCrow());
         SaveGame();
+    }
+
+    // Every morning Zhora jumps onto the coop roof and crows for the whole farm to hear.
+    IEnumerator MorningCrow()
+    {
+        string morning = "Ранок! День " + dayNight.day + ". Курочки голодні — насип зерна в годівницю.";
+        if (!zhora.activeSelf)
+        {
+            Say(morning, 6f);
+            yield break;
+        }
+        yield return new WaitForSeconds(1f);
+        Transform rooster = zhora.transform;
+        Vector3 front = FarmWorldBuilder.CoopDoorOutside + new Vector3(-0.8f, 0f, -0.3f);
+        Vector3 roof = FarmWorldBuilder.CoopPosition + new Vector3(0f, FarmWorldBuilder.CoopRidge, 0f);
+        zhoraGrazer.enabled = false; // we move him ourselves for a moment
+        rooster.position = front;    // out of the door first
+        yield return Hop(rooster, front, roof, 0.8f, 1f);
+        for (int k = 0; k < 2; k++)
+        {
+            FarmAudio.Play("rooster_crow", roof + Vector3.up * 0.5f, 1f, 1f, 25f); // loud: heard all over the farm
+            SpeakerSays(rooster, "Жора: КУКУРІКУ-У-У!", 2.2f);
+            yield return new WaitForSeconds(2.2f);
+        }
+        yield return Hop(rooster, roof, front, 0.7f, 0.5f);
+        zhoraGrazer.PlaceAt(front); // done: no more walking in and out of the door
+        zhoraGrazer.enabled = true;
+        Say(morning, 6f);
     }
 
     void GoToSleep()
@@ -186,9 +226,32 @@ public partial class FarmPrototype
 
     // ---------- loading a saved game ----------
 
+    // Bought from Marquis: hammers knock, the upper shelf with 4 nests, a ladder and a window pop in.
+    IEnumerator UpgradeCoop()
+    {
+        repairing = true;
+        Say("Стук-стук! Курник розширюється…", 4f);
+        StartCoroutine(HammerKnocks(FarmWorldBuilder.CoopDoorOutside + Vector3.up * 1.6f, 4, 0.2f));
+        for (int k = 0; k < 4; k++)
+        {
+            FarmAudio.Play(k % 2 == 0 ? "knock_1" : "knock_2", FarmWorldBuilder.CoopPosition + Vector3.up * 1.5f, 1f, Random.Range(0.95f, 1.05f));
+            yield return new WaitForSeconds(0.2f);
+        }
+        coopUpgraded = true;
+        yield return PopIn(coopUpgrade, 0.08f);
+        FarmAudio.Play("success", FarmWorldBuilder.CoopPosition + Vector3.up * 1.5f, 1f);
+        repairing = false;
+        if (zhora.activeSelf)
+            SpeakerSays(zhora.transform, "Жора: Ко-ко! Новий поверх! Тепер у моєму курнику місця ще для 4 курочок. Директор задоволений!", 7f);
+        else
+            Say("Курник розширено: +4 гнізда і місце ще для 4 курочок!", 6f);
+        SaveGame();
+    }
+
     void ApplyEggState(GameSave save)
     {
-        for (int i = 0; i < nests.Length && i < save.nests.Length; i++)
+        coopUpgrade.SetActive(coopUpgraded);
+        for (int i = 0; i < NestsInUse && i < save.nests.Length; i++)
             if (save.nests[i]) SpawnEgg(i);
         firstEggLaid = stage > Stage.WaitEggs || ItemCount("egg") > 0 || System.Array.Exists(nestEggs, egg => egg != null);
         firstEggAt = Time.time + 12f;

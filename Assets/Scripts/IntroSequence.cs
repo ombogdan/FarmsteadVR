@@ -20,11 +20,11 @@ public class IntroSequence : MonoBehaviour
     static readonly string[] PageHeadings = { "Лист від діда", "Стара ферма", "Квиток до села" };
     static readonly string[] Pages =
     {
-        "Привіт! Це дід Панас. Залишаю тобі ферму «Соняшник». Подбай про неї.",
+        "Привіт! Це дід Панас. Залишаю тобі ферму «Сидорівка». Подбай про неї.",
         "Колись тут було людно. Тепер стежка заросла, а паркан похилився. Думаю, ти зможеш повернути сюди життя.",
         "У рюкзаку вже лежить лист. Автобус відходить зранку. Побачимось на фермі!",
     };
-    static readonly string[] PhotoNotes = { "Із дідового альбому", "Ферма «Соняшник»", "Рейс 21  •  До села" };
+    static readonly string[] PhotoNotes = { "Із дідового альбому", "Ферма «Сидорівка»", "Рейс 21  •  До села" };
 
     static readonly Color Ink = new Color(0.22f, 0.15f, 0.1f);
 
@@ -92,7 +92,7 @@ public class IntroSequence : MonoBehaviour
             yield return null;
         }
 
-        ShowCaption("Наступна зупинка — ферма «Соняшник»!");
+        ShowCaption("Наступна зупинка — ферма «Сидорівка»!");
         for (float t = 0f; t < 2f; t += Time.deltaTime) // the bus slows down smoothly
         {
             rideSpeed = RideSpeed * (1f - Mathf.SmoothStep(0f, 1f, t / 2f));
@@ -244,7 +244,7 @@ public class IntroSequence : MonoBehaviour
         photoNote = LetterText(photo, "Photo caption", new Vector3(0f, -.122f, -.009f), Ink);
         footer = LetterText(book, "Page and controls", new Vector3(0f, -.244f, -.018f), Ink);
         var sender = LetterText(book, "Postmark", new Vector3(.25f, .203f, -.018f), new Color(.45f,.27f,.13f));
-        FitText(sender, "ФЕРМА  СОНЯШНИК", .34f, .028f);
+        FitText(sender, "ФЕРМА  СИДОРІВКА", .34f, .028f);
     }
 
     TextPlate LetterText(Transform parent, string name, Vector3 position, Color color)

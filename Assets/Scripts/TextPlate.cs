@@ -36,6 +36,11 @@ public class TextPlate
 
     public Bounds TextBounds => textRenderer.localBounds;
 
+    public void SetColor(Color color)
+    {
+        if (text.color != color) text.color = color;
+    }
+
     // Places the plate in the world, facing the player's head.
     // extraLeft: more plate on the left side, e.g. room for an icon.
     public void Show(string value, Vector3 position, Transform head, float scale = 1f, float extraLeft = 0f)

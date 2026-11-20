@@ -8,12 +8,17 @@ public static class PlayerBody
     const float Bottom = 0.35f; // starts above the ground, so the ground itself never blocks
     const float Top = 1.6f;
 
+    // Animals, eggs and the shop menu live on this layer: the laser still finds them,
+    // but they never block your way (hens used to stand in the coop door). Unity's built-in layer 1.
+    public const int WalkThroughLayer = 1;
+    const int Blocking = Physics.DefaultRaycastLayers & ~(1 << WalkThroughLayer);
+
     // Is there room to stand with the feet at this point?
     public static bool CanStand(Vector3 feet)
     {
         feet.y = 0f;
         return !Physics.CheckCapsule(feet + Vector3.up * Bottom, feet + Vector3.up * Top, Radius,
-            Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            Blocking, QueryTriggerInteraction.Ignore);
     }
 
     // Keeps the player on the map (the ground is 70 x 70 m).

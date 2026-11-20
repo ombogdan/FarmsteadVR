@@ -22,8 +22,17 @@ public class FarmPropsImport : AssetPostprocessor
     public static void EnsureMaterials()
     {
         if (!AssetDatabase.IsValidFolder("Assets/Resources/FarmProps")) return; // the generator hasn't run yet
-        if (AssetDatabase.LoadAssetAtPath<Texture>(Root + "Burlap.png") == null && System.IO.File.Exists(Root + "Burlap.png"))
-            AssetDatabase.Refresh(); // brand-new files: import them first, so the materials can use them
+        foreach (string png in new[] { "Burlap.png", "GoatFur.png" })
+            if (AssetDatabase.LoadAssetAtPath<Texture>(Root + png) == null && System.IO.File.Exists(Root + png))
+            {
+                AssetDatabase.Refresh(); // brand-new files: import them first, so the materials can use them
+                break;
+            }
+        Make("LawnA", new Color(.34f, .5f, .19f), .08f);  // three greens for the lawn inside the fence
+        Make("LawnB", new Color(.43f, .58f, .23f), .08f);
+        Make("LawnC", new Color(.28f, .43f, .16f), .08f);
+        Make("GoatCoat", Color.white, .12f, Root + "GoatFur.png", Vector2.one);
+        Make("GoatLegs", new Color(.36f, .26f, .19f), .1f);
         Make("Iron", new Color(.25f, .235f, .22f), .38f, metallic: .55f);
         Make("CarrotSkin", new Color(.95f, .48f, .13f), .3f);
         Make("CarrotTop", new Color(.33f, .56f, .2f), .18f);

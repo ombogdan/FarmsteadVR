@@ -23,12 +23,14 @@ public static partial class FarmWorldBuilder
 {
     // Properties (not fields): they are built from positions in the other file of this class.
     public static Vector3 HousePosition => new Vector3(11f, 0f, 18.5f);
+    static Vector3 DoorHinge => new Vector3(-0.6f, 0f, -2.95f); // the house's door hangs here (house space)
     public static Vector3 FeederPosition => CoopPosition + new Vector3(2.1f, 0f, -3.4f);
-    public static Vector3 GrainSackPosition => CoopPosition + new Vector3(2.5f, 0f, -1.3f);
+    public static Vector3 GrainSackPosition => CoopPosition + new Vector3(3.25f, 0f, -3.8f); // next to the feeder
     public static Vector3 MoundPosition => new Vector3(15f, 0f, 10.8f);
     public static Vector3 CanPosition => new Vector3(13.25f, 0f, 14.4f);
     public const int BedCount = 4;
     public const int CarrotsPerBed = 2;
+    const float BedHeight = 0.4f, SoilTop = 0.38f;
     public static Vector3 BedPosition(int i) => new Vector3(9.05f + i * 1.3f, 0f, 11.6f);
 
     // Where the horseshoes hide. The last two hang on walls (over the house door, inside the coop).
@@ -44,12 +46,26 @@ public static partial class FarmWorldBuilder
 
     static void Chores()
     {
+        Lawn();
         GrainSack();
         Feeder();
         Horseshoes();
         MoundAndChest();
         Garden();
         HouseRepair();
+    }
+
+    // A real pasture inside the fence: ~40,000 short grass blades in tufts (three shades of green),
+    // made by generate_props.py around the path, the buildings and the beds. It never moves, so it's
+    // batched with the rest of "Static"; it doesn't cast shadows (that would cost a lot on the Quest).
+    static void Lawn()
+    {
+        foreach (string part in new[] { "LawnA", "LawnB", "LawnC" })
+        {
+            Transform grass = Prop(statics, part, "FarmProps/" + part, Vector3.zero, Vector3.zero, 1f);
+            MeshRenderer look = grass.GetComponent<MeshRenderer>();
+            if (look != null) look.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
     }
 
     // ---------- feeding the hens ----------
@@ -186,29 +202,30 @@ public static partial class FarmWorldBuilder
         {
             Transform bed = Group("Garden Bed " + i, world, BedPosition(i));
             BoxCollider hit = bed.gameObject.AddComponent<BoxCollider>();
-            hit.center = new Vector3(0f, 0.18f, 0f);
-            hit.size = new Vector3(1f, 0.36f, 2.3f);
+            hit.center = new Vector3(0f, 0.22f, 0f);
+            hit.size = new Vector3(1f, 0.44f, 2.3f);
             FarmInteractable action = bed.gameObject.AddComponent<FarmInteractable>();
             action.kind = FarmInteractable.Kind.Bed;
             action.label = "оглянути грядку";
             action.itemId = i.ToString();
 
+            // 40 cm tall, like real raised beds: easy to reach, and the meadow grass doesn't poke through.
             foreach (float x in new[] { -0.47f, 0.47f })
-                Shape("Frame", PrimitiveType.Cube, new Vector3(x, 0.1f, 0f), new Vector3(0.06f, 0.2f, 2.3f), "Wood", bed);
+                Shape("Frame", PrimitiveType.Cube, new Vector3(x, BedHeight / 2f, 0f), new Vector3(0.06f, BedHeight, 2.3f), "Wood", bed);
             foreach (float z in new[] { -1.12f, 1.12f })
-                Shape("Frame", PrimitiveType.Cube, new Vector3(0f, 0.1f, z), new Vector3(0.94f, 0.2f, 0.06f), "Wood", bed);
-            Piece("Soil", PrimitiveType.Cube, new Vector3(0f, 0.08f, 0f), new Vector3(0.88f, 0.16f, 2.18f), "FarmProps/Soil", bed);
+                Shape("Frame", PrimitiveType.Cube, new Vector3(0f, BedHeight / 2f, z), new Vector3(0.94f, BedHeight, 0.06f), "Wood", bed);
+            Piece("Soil", PrimitiveType.Cube, new Vector3(0f, SoilTop / 2f, 0f), new Vector3(0.88f, SoilTop, 2.18f), "FarmProps/Soil", bed);
 
-            Transform weeds = Group("Weeds", bed, new Vector3(0f, 0.16f, 0f));
-            foreach (float z in new[] { -0.7f, 0f, 0.7f })
+            Transform weeds = Group("Weeds", bed, new Vector3(0f, SoilTop, 0f));
+            foreach (float z in new[] { -0.85f, -0.4f, 0f, 0.45f, 0.85f })
             {
-                Transform grass = ArrivalArt.CountryModel(weeds, "WildGrass", "WildGrassSpray", 1.8f, random.Next(360));
-                if (grass != null) grass.localPosition = new Vector3(Rand(random, -0.15f, 0.15f), 0f, z);
+                Transform grass = ArrivalArt.CountryModel(weeds, "WildGrass", "WildGrassSpray", Rand(random, 2.8f, 3.6f), random.Next(360));
+                if (grass != null) grass.localPosition = new Vector3(Rand(random, -0.25f, 0.25f), 0f, z);
             }
             Transform flower = ArrivalArt.CountryModel(weeds, "Wildflower", "WildflowerSpray", 0.5f, random.Next(360));
             if (flower != null) flower.localPosition = new Vector3(0.1f, 0f, 0.35f);
 
-            Transform plants = Group("Plants", bed, new Vector3(0f, 0.16f, 0f));
+            Transform plants = Group("Plants", bed, new Vector3(0f, SoilTop, 0f));
             for (int p = 0; p < CarrotsPerBed; p++)
             {
                 Transform plant = Group("Carrot", plants, new Vector3(0f, 0f, p == 0 ? -0.5f : 0.5f));
@@ -237,7 +254,8 @@ public static partial class FarmWorldBuilder
 
     static void HouseRepair()
     {
-        // The boards nailed over the windows (they fly away during the repair).
+        // The old, shabby bits (they go away during the repair): boards nailed over the windows,
+        // the old door hanging open, a broken chair on the floor.
         Transform boards = Group("House Boards", world, HousePosition);
         foreach (float x in new[] { -2.2f, 2.2f })
         {
@@ -246,23 +264,66 @@ public static partial class FarmWorldBuilder
             board = Shape("Board", PrimitiveType.Cube, new Vector3(x, 2.8f, -3.1f), new Vector3(1.3f, 0.16f, 0.05f), "DarkWood", boards);
             board.transform.localRotation = Quaternion.Euler(0f, 0f, -20f);
         }
+        Transform oldHinge = Group("Old Door", boards, DoorHinge);
+        oldHinge.localRotation = Quaternion.Euler(0f, -100f, 0f); // open into the house, out of your way
+        Shape("Door", PrimitiveType.Cube, new Vector3(0.6f, 1.13f, 0f), new Vector3(1.18f, 2.24f, 0.05f), "DarkWood", oldHinge);
+        GameObject brokenSeat = Shape("Broken Chair", PrimitiveType.Cube, new Vector3(-0.9f, 0.08f, 0.9f), new Vector3(0.45f, 0.05f, 0.45f), "Wood", boards);
+        brokenSeat.transform.localRotation = Quaternion.Euler(8f, 35f, 70f);
+        GameObject brokenLeg = Shape("Broken Chair", PrimitiveType.Cube, new Vector3(-0.55f, 0.03f, 1.2f), new Vector3(0.04f, 0.04f, 0.45f), "Wood", boards);
+        brokenLeg.transform.localRotation = Quaternion.Euler(0f, 60f, 0f);
 
-        // What you point at: the whole front of the house.
+        // What you point at outside: the front of the house, with the doorway left free so you can walk in.
         Transform house = Group("Farmhouse", world, HousePosition);
-        BoxCollider hit = house.gameObject.AddComponent<BoxCollider>();
-        hit.center = new Vector3(0f, 2.25f, -3.1f);
-        hit.size = new Vector3(7.2f, 4.5f, 0.16f);
+        foreach (float side in new[] { -1f, 1f })
+        {
+            BoxCollider wall = house.gameObject.AddComponent<BoxCollider>();
+            wall.center = new Vector3(side * 2.125f, 2.25f, -3.1f);
+            wall.size = new Vector3(2.95f, 4.5f, 0.16f);
+        }
+        BoxCollider overDoor = house.gameObject.AddComponent<BoxCollider>();
+        overDoor.center = new Vector3(0f, 3.4f, -3.1f);
+        overDoor.size = new Vector3(1.3f, 2.2f, 0.16f);
         FarmInteractable action = house.gameObject.AddComponent<FarmInteractable>();
         action.kind = FarmInteractable.Kind.House;
         action.label = "оглянути старий будинок";
         Transform ring = GlowRing(house, 0.9f, 0.03f);
         ring.localPosition = new Vector3(0f, 0.03f, -3.9f); // in front of the door
 
+        // The old bed inside: sleep here until morning.
+        Transform bed = Group("House Bed", world, HousePosition + new Vector3(-2.75f, 0f, 1.4f));
+        BoxCollider bedHit = bed.gameObject.AddComponent<BoxCollider>();
+        bedHit.center = new Vector3(0f, 0.36f, 0f);
+        bedHit.size = new Vector3(1f, 0.72f, 2f);
+        FarmInteractable sleep = bed.gameObject.AddComponent<FarmInteractable>();
+        sleep.kind = FarmInteractable.Kind.Sleep;
+        sleep.label = "поспати до ранку";
+
         // The repaired look. Every part is a direct child, so it can pop in part by part.
         Transform fresh = Group("House Repairs", world, HousePosition);
-        Piece("New Door", PrimitiveType.Cube, new Vector3(0f, 1.22f, -3.1f), new Vector3(1.3f, 2.42f, 0.06f), "FarmProps/DoorPaint", fresh);
-        Piece("Door Knob", PrimitiveType.Sphere, new Vector3(0.45f, 1.15f, -3.15f), Vector3.one * 0.07f, "ArrivalArt/Brass", fresh);
+        Transform newHinge = Group("New Door", fresh, DoorHinge);
+        newHinge.localRotation = Quaternion.Euler(0f, -100f, 0f);
+        Piece("Door", PrimitiveType.Cube, new Vector3(0.6f, 1.14f, 0f), new Vector3(1.2f, 2.26f, 0.06f), "FarmProps/DoorPaint", newHinge);
+        Piece("Door Knob", PrimitiveType.Sphere, new Vector3(1.05f, 1.1f, -0.05f), Vector3.one * 0.07f, "ArrivalArt/Brass", newHinge);
         Piece("Porch Step", PrimitiveType.Cube, new Vector3(0f, 0.08f, -3.6f), new Vector3(2.4f, 0.16f, 1f), "CountryArt/Boards", fresh);
+        // Inside: a new quilt, a rug, flowers and a warm lamp on the table.
+        Piece("New Quilt", PrimitiveType.Cube, new Vector3(-2.75f, 0.645f, 1f), new Vector3(1f, 0.06f, 1.3f), "ArrivalArt/QuiltFabric", fresh);
+        Piece("Rug", PrimitiveType.Cube, new Vector3(0f, 0.066f, 0.1f), new Vector3(2.2f, 0.012f, 1.5f), "ArrivalArt/LampLinen", fresh);
+        Transform vase = Group("Table Flowers", fresh, new Vector3(1.75f, 0.79f, 1.55f));
+        Piece("Pot", PrimitiveType.Cube, new Vector3(0f, 0.06f, 0f), Vector3.one * 0.12f, "ArrivalArt/Brass", vase);
+        Transform posy = ArrivalArt.CountryModel(vase, "Wildflower", "WildflowerSpray", 0.3f, 40f);
+        if (posy != null) posy.localPosition = new Vector3(0f, 0.12f, 0f);
+        Transform tableLamp = Group("Table Lamp", fresh, new Vector3(2.35f, 0.79f, 1.55f));
+        Piece("Base", PrimitiveType.Cube, new Vector3(0f, 0.015f, 0f), new Vector3(0.12f, 0.03f, 0.12f), "ArrivalArt/Brass", tableLamp);
+        Piece("Glow", PrimitiveType.Cube, new Vector3(0f, 0.11f, 0f), new Vector3(0.09f, 0.15f, 0.09f), "FarmProps/LampGlow", tableLamp);
+        Piece("Cap", PrimitiveType.Cube, new Vector3(0f, 0.2f, 0f), new Vector3(0.13f, 0.03f, 0.13f), "ArrivalArt/Brass", tableLamp);
+        Light warm = new GameObject("Lamp Light").AddComponent<Light>();
+        warm.transform.SetParent(tableLamp, false);
+        warm.transform.localPosition = new Vector3(0f, 0.3f, 0f);
+        warm.type = LightType.Point;
+        warm.range = 5f;
+        warm.intensity = 1.1f;
+        warm.color = new Color(1f, 0.82f, 0.55f);
+        warm.shadows = LightShadows.None;
 
         Transform lamp = Group("Lantern", fresh, new Vector3(1.05f, 2.3f, -3.2f));
         Piece("Bracket", PrimitiveType.Cube, new Vector3(0f, 0.12f, 0.1f), new Vector3(0.03f, 0.03f, 0.2f), "FarmProps/Iron", lamp);

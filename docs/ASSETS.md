@@ -18,11 +18,13 @@
 
 | Що | Де лежить | Автор / джерело | Ліцензія | Дата |
 | --- | --- | --- | --- | --- |
-| Усі звуки: вітер, пташки, стук, «чпок», монетка, фанфари, «вжух», «тік», «кукуріку», двигун і гудок автобуса, «пш-ш» дверей, гортання сторінки (голос Бориса прибрали) | `Assets/Resources/Sounds/*.wav` | Згенеровано нашим скриптом `Tools/SoundGen/generate_sounds.py` з математики (синусоїди, шум, фільтри), без записів і чужих семплів | Наші власні | 2026-11-20 |
+| Усі звуки: вітер, пташки, стук, «чпок», монетка, фанфари, «вжух», «тік», «кукуріку», двигун і гудок автобуса, «пш-ш» дверей, гортання сторінки, копання, шурхіт бур'янів, полив, зерно, хрумкання моркви (голос Бориса прибрали) | `Assets/Resources/Sounds/*.wav` | Згенеровано нашим скриптом `Tools/SoundGen/generate_sounds.py` з математики (синусоїди, шум, фільтри), без записів і чужих семплів | Наші власні | 2026-11-20 |
 | Матеріали (кольори) | `Assets/Resources/FarmMaterials/*.mat` | Створені скриптом `Assets/Editor/FarmSceneInitializer.cs` | Наші власні | 2026-11-20 |
-| Моделі (будинки, Борис, ящик, паркан, дерева) | Будуються кодом у `FarmPrototype.cs` з простих фігур Unity | Наші власні | Наші власні | 2026-11-20 |
+| Моделі (будинки, ящик, паркан, грядки, годівниця, скриня) | Будуються кодом у `FarmWorldBuilder.cs` і `FarmWorldBuilder.Chores.cs` з простих фігур Unity | Наші власні | Наші власні | 2026-11-20 |
+| Підкова, морква (корінь і бадилля), лійка, мішок із зерном, **козел Борис** (тіло, голова, роги, ноги, копита), **газон** усередині огорожі | `Assets/Resources/FarmProps/*.obj` | Згенеровано нашим скриптом `Tools/ModelGen/generate_props.py` з математики (криві, «гончарне коло», трубки), нічого не скопійовано | Наші власні | 2026-11-20 |
+| Текстури мішковини й шерсті Бориса | `Assets/Resources/FarmProps/Burlap.png`, `GoatFur.png` | Згенеровано тим самим скриптом (переплетені нитки) | Наші власні | 2026-11-20 |
+| Матеріали ґрунту, свіжої фарби, фарбованих дверей | `Assets/Resources/FarmProps/*.mat` | Створені `Assets/Editor/FarmPropsImport.cs`, беруть текстури з Poly Haven нижче (стежка, штукатурка, деревина) | CC0 (текстури) + наші власні | 2026-11-20 |
 | Шрифт тексту у VR | Вбудований шрифт Unity (`LegacyRuntime.ttf`) | Unity | Входить в Unity. **Перед релізом перевірити ліцензію** або замінити на шрифт з ліцензією OFL (наприклад, з Google Fonts) | 2026-11-20 |
-
 | Луг | `Assets/Resources/CountryArt/` | [Poly Haven · leafy_grass](https://polyhaven.com/a/leafy_grass) | [CC0](https://polyhaven.com/license) | 2026-11-20 |
 | Стежка | `Assets/Resources/CountryArt/` | [Poly Haven · grass_path_3](https://polyhaven.com/a/grass_path_3) | [CC0](https://polyhaven.com/license) | 2026-11-20 |
 | Обшивка | `Assets/Resources/CountryArt/` | [Poly Haven · weathered_plank_siding](https://polyhaven.com/a/weathered_plank_siding) | [CC0](https://polyhaven.com/license) | 2026-11-20 |
@@ -38,11 +40,18 @@
 | Трава | `Assets/Resources/CountryArt/` | [Poly Haven · grass_medium_01](https://polyhaven.com/a/grass_medium_01) | [CC0](https://polyhaven.com/license) | 2026-11-20 |
 | Кущі | `Assets/Resources/CountryArt/` | [Poly Haven · shrub_02](https://polyhaven.com/a/shrub_02) | [CC0](https://polyhaven.com/license) | 2026-11-20 |
 | Панорама неба | `Assets/Resources/CountryArt/` | [Poly Haven · kloofendal_48d_partly_cloudy](https://polyhaven.com/a/kloofendal_48d_partly_cloudy) | [CC0](https://polyhaven.com/license) | 2026-11-20 |
-
-Силуети дальнього лісу запечені у Unity з моделей сцени. Геометрія соняшників, пагорбів та модель Бориса створені для FarmsteadVR.
-
 | Фото з листа діда | `Assets/Resources/ArrivalArt/FamilyPhoto.jpg` | Створено в ImageGen для FarmsteadVR | Створено для проєкту | 2026-11-20 |
 | Курочки, півень, автобус і реквізит вступу | `Assets/Resources/ArrivalArt/` | Оригінальні 3D-моделі, текстури оперення, тканини й кузова | Створено для проєкту | 2026-11-20 |
+
+Силуети дальнього лісу запечені у Unity з моделей сцени; дерева, що стояли на дорозі, прибирає `Tools/ModelGen/clear_road.py`. Геометрія соняшників і пагорбів створена для FarmsteadVR. Стара модель Бориса (`CountryArt/Boris*`) більше не використовується: його замінив новий козел з окремими ногами, які ходять.
+
+## Як перегенерувати моделі
+
+```bash
+python3 Tools/ModelGen/generate_props.py
+```
+
+Нову модель кращої якості можна покласти в `Assets/Resources/FarmProps/` з **тією ж назвою**. Розмір рахується в метрах. Після заміни виконай у Unity **Farm Prototype → Rebuild Scene**.
 
 ## Як перегенерувати звуки
 

@@ -53,6 +53,19 @@ public static class FarmInput
         return interact.WasPressedThisFrame();
     }
 
+    // Held down / let go this frame (dragging things in the shop window).
+    public static bool InteractHeld()
+    {
+        Setup();
+        return interact.IsPressed();
+    }
+
+    public static bool InteractReleased()
+    {
+        Setup();
+        return interact.WasReleasedThisFrame();
+    }
+
     // The task-panel button (Tab / X): pressed this frame, held down, released this frame.
     // A short press opens the panel; holding it for a few seconds starts a new game.
     public static bool MenuPressed()

@@ -66,7 +66,7 @@ public static class CoachModel
         route.Root.SetParent(coach, false);
         route.Root.localPosition = new Vector3(0f, 2.583f, 4.55f);
         route.Root.localRotation = Quaternion.Euler(0f, 180f, 0f);
-        route.SetText("21   СОНЯШНИК");
+        route.SetText("21   СИДОРІВКА");
         route.Root.localScale = Vector3.one * Mathf.Min(1.12f / Mathf.Max(0.01f, route.TextBounds.size.x), 0.15f / Mathf.Max(0.01f, route.TextBounds.size.y));
 
     }

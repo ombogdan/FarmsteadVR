@@ -15,7 +15,7 @@ public partial class FarmPrototype : MonoBehaviour
 {
     // Bump this number whenever FarmWorldBuilder changes. The editor sees that the saved scene
     // has an older version and rebuilds the farm by itself (no manual "Rebuild Scene" needed).
-    public const int WorldVersion = 8;
+    public const int WorldVersion = 10;
     public const string WorldVersionMarker = "World Version ";
 
     enum Stage
@@ -126,7 +126,7 @@ public partial class FarmPrototype : MonoBehaviour
         stage = Stage.Arrive;
         StartBusLeaving();
         string buttons = FarmInput.HeadsetActive ? "X — завдання, Y — інвентар" : "Tab — завдання, I — інвентар";
-        Say("Ось і ферма «Соняшник»! Ходімо подивимось, що там коїться. (" + buttons + ")", 10f);
+        Say("Ось і ферма «Сидорівка»! Ходімо подивимось, що там коїться. (" + buttons + ")", 10f);
         SaveGame();
     }
 
@@ -141,7 +141,7 @@ public partial class FarmPrototype : MonoBehaviour
         yield return null;
         FarmInput.MovementLocked = false;
         yield return fade.FadeTo(0f, 0.8f);
-        Say("З поверненням на ферму «Соняшник»! День " + dayNight.day + ", " + dayNight.PartOfDay + ".", 6f);
+        Say("З поверненням на ферму «Сидорівка»! День " + dayNight.day + ", " + dayNight.PartOfDay + ".", 6f);
         StoryAfterLoad();
     }
 
@@ -270,8 +270,9 @@ public partial class FarmPrototype : MonoBehaviour
             case FarmInteractable.Kind.Egg: CollectEgg(item); break;
             case FarmInteractable.Kind.Sleep: GoToSleep(); break;
             case FarmInteractable.Kind.Cat: TalkToMarquis(); break;
-            case FarmInteractable.Kind.ShopItem: Buy(item); break;
-            case FarmInteractable.Kind.SellBasket: SellEggs(); break;
+            case FarmInteractable.Kind.ShopItem: OpenShop(false); break; // the goods on the counter: the BUY menu
+            case FarmInteractable.Kind.SellBasket: OpenShop(true); break; // the basket: the SELL menu
+            case FarmInteractable.Kind.MenuRow: PressMenu(item.itemId); break;
             case FarmInteractable.Kind.GrainSack: TakeGrain(); break;
             case FarmInteractable.Kind.Feeder: FillFeeder(); break;
             case FarmInteractable.Kind.Horseshoe: PickHorseshoe(item); break;
@@ -415,6 +416,7 @@ public partial class FarmPrototype : MonoBehaviour
             time01 = dayNight.time01,
             nests = NestState(),
             fedDay = fedDay,
+            coopUpgraded = coopUpgraded,
             horseshoes = horseshoesFound,
             beds = (int[])bedState.Clone(),
             bedGrowth = (float[])bedGrowth.Clone(),
@@ -431,6 +433,7 @@ public partial class FarmPrototype : MonoBehaviour
     {
         stage = (Stage)save.stage;
         coins = save.coins;
+        coopUpgraded = save.coopUpgraded;
         hensBought = Mathf.Min(save.hensBought, hens.Count);
         for (int i = 0; i < save.itemIds.Length && i < save.itemCounts.Length; i++) AddItem(save.itemIds[i], save.itemCounts[i]);
         foreach (string hint in save.usedHints) usedHints.Add(hint);
@@ -469,7 +472,7 @@ public partial class FarmPrototype : MonoBehaviour
         switch (stage)
         {
             case Stage.Intro: questText = ""; break;
-            case Stage.Arrive: questText = "Дійди до ферми «Соняшник»."; break;
+            case Stage.Arrive: questText = "Дійди до ферми «Сидорівка»."; break;
             case Stage.FindTools: questText = "Знайди інструменти для паркана (" + ToolCount() + "/3). Ще треба: " + MissingTools() + ". Біля них світяться маленькі помаранчеві кола."; break;
             case Stage.RepairFence: questText = "Усі інструменти є! Полагодь розвалений паркан біля воріт."; break;
             case Stage.MeetBoris: questText = "Послухай козла Бориса."; break;
@@ -486,7 +489,7 @@ public partial class FarmPrototype : MonoBehaviour
         }
         if (stage >= Stage.MeetMarquis) questText += DailyChoreText();
         if (dayNight != null && dayNight.running && night)
-            questText += stage >= Stage.EpisodeDone ? "\nЗараз ніч: можна поспати вдома." : "\nЗараз ніч: можна поспати на сіні біля стодоли.";
+            questText += "\nЗараз ніч: можна поспати в ліжку в будинку діда Панаса.";
     }
 
     // ---------- read by VrHud, VrHands and the Mac screen ----------

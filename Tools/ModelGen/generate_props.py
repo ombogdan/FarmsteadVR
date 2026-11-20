@@ -75,6 +75,8 @@ class Mesh:
 
     def normals(self):
         """Smooth shading: vertices at the same spot in the same group share one normal."""
+        if getattr(self, "fixed_normals", None):
+            return self.fixed_normals
         sums = {}
         keys = []
         for p, g in zip(self.v, self.group):
@@ -140,9 +142,10 @@ def lathe(mesh, profile, segments, group, center=(0.0, 0.0, 0.0), wobble=None, u
             mesh.quad(rows[j][i], rows[j + 1][i], rows[j + 1][i + 1], rows[j][i + 1], inside)
 
 
-def tube(mesh, path, radius_at, segments, group, closed=False, caps=True, flat=1.0):
+def tube(mesh, path, radius_at, segments, group, closed=False, caps=True, flat=1.0, wide=1.0):
     """A tube along a path. radius_at(t) for t in 0..1 along the path; flat < 1 squashes it
-    (wide one way, thin the other, like a leaf or a horseshoe)."""
+    (wide one way, thin the other, like a leaf or a horseshoe); wide < 1 makes it narrower
+    sideways (like a goat's body: taller than it is wide)."""
     count = len(path)
     lengths = [0.0]
     for a, b in zip(path, path[1:]):
@@ -168,7 +171,7 @@ def tube(mesh, path, radius_at, segments, group, closed=False, caps=True, flat=1
         ring = []
         for i in range(segments + 1):
             a = TAU * (i % segments) / segments
-            offset = add(mul(side, math.cos(a) * r), mul(up, math.sin(a) * r * flat))
+            offset = add(mul(side, math.cos(a) * r * wide), mul(up, math.sin(a) * r * flat))
             ring.append(mesh.vertex(add(path[k], offset), (i / segments, lengths[k] / total), group))
         rings.append(ring)
     for k in range(count - 1):
@@ -320,6 +323,186 @@ def grain_sack():
     m.save()
 
 
+# ---------- Boris the goat ----------
+# Separate parts, so the game can move them: the body (with neck and tail), the head (pivot at the
+# top of the neck: it goes down to graze), the horns, one front leg, one hind leg and a hoof
+# (each leg swings at its top while he walks). He looks along -z, like all animals in the game.
+# Real goat sizes: about 0.8 m at the shoulder, 1 m with the horns.
+
+def rounded(t, base, ends=0.13):
+    """A radius that closes smoothly at both ends of a tube (no flat cut-off ends)."""
+    edge = min(t, 1 - t)
+    if edge >= ends:
+        return base
+    k = edge / ends
+    return base * math.sqrt(max(0.0, 1 - (1 - k) ** 2))
+
+
+def goat():
+    body = Mesh("GoatBody")
+    spine = catmull_rom([(0, 0.6, 0.47), (0, 0.6, 0.3), (0, 0.57, 0.05), (0, 0.59, -0.2), (0, 0.62, -0.38)], 6)
+    girth = lambda t: rounded(t, 0.162 + 0.04 * math.sin(math.pi * t) + 0.012 * t, 0.16)
+    tube(body, spine, girth, 22, group=1, caps=False, wide=0.74)
+    neck = catmull_rom([(0, 0.6, -0.24), (0, 0.72, -0.35), (0, 0.84, -0.42), (0, 0.88, -0.43)], 4)
+    tube(body, neck, lambda t: lerp(0.078, 0.058, t), 16, group=2, wide=0.8)
+    tail = catmull_rom([(0, 0.66, 0.44), (0, 0.73, 0.5), (0, 0.79, 0.51)], 3)
+    tube(body, tail, lambda t: rounded(t, lerp(0.03, 0.012, t), 0.3), 8, group=3, caps=False, flat=0.6)
+    body.save()
+
+    head = Mesh("GoatHead")
+    skull = catmull_rom([(0, 0.035, 0.05), (0, 0.035, -0.03), (0, -0.01, -0.11), (0, -0.065, -0.18), (0, -0.09, -0.225)], 5)
+
+    def head_size(t):
+        base = 0.074 if t < 0.25 else lerp(0.074, 0.043, (t - 0.25) / 0.75)
+        return rounded(t, base, 0.18)
+
+    tube(head, skull, head_size, 18, group=1, caps=False, wide=0.82)
+    for side in (-1, 1):  # floppy ears out to the sides
+        ear = catmull_rom([(side * 0.05, 0.05, 0.0), (side * 0.13, 0.04, 0.02), (side * 0.2, 0.0, 0.04)], 3)
+        tube(head, ear, lambda t: 0.006 + 0.03 * math.sin(math.pi * (0.1 + 0.85 * t)), 6, group=10 + side, flat=0.28)
+    beard = catmull_rom([(0, -0.08, -0.13), (0, -0.15, -0.12), (0, -0.21, -0.1)], 3)
+    tube(head, beard, lambda t: lerp(0.022, 0.004, t), 7, group=20, wide=0.7)
+    head.save()
+
+    horns = Mesh("GoatHorns")
+    for side in (-1, 1):  # sweeping up and back, a little apart
+        horn = catmull_rom([(side * 0.03, 0.07, 0.0), (side * 0.04, 0.15, 0.05), (side * 0.055, 0.19, 0.13),
+                            (side * 0.07, 0.17, 0.22), (side * 0.08, 0.12, 0.26)], 4)
+        tube(horns, horn, lambda t: lerp(0.021, 0.004, t ** 0.8), 10, group=side)
+    horns.save()
+
+    front = Mesh("GoatFrontLeg")  # top (0, 0, 0) is where it swings; the hoof goes at y = -0.5
+    path = catmull_rom([(0, 0.06, 0), (0, -0.12, 0.0), (0, -0.25, -0.012), (0, -0.4, 0.0), (0, -0.5, -0.004)], 4)
+    tube(front, path, lambda t: 0.056 - 0.03 * min(1, t * 1.6) + (0.006 if 0.45 < t < 0.55 else 0), 10, group=1, wide=0.9)
+    front.save()
+    hind = Mesh("GoatHindLeg")  # the hock bends backwards
+    path = catmull_rom([(0, 0.06, 0), (0, -0.1, 0.035), (0, -0.22, 0.075), (0, -0.36, 0.03), (0, -0.5, 0.01)], 4)
+    tube(hind, path, lambda t: 0.068 - 0.044 * min(1, t * 1.5) + (0.006 if 0.4 < t < 0.5 else 0), 10, group=1, wide=0.85)
+    hind.save()
+    hoof = Mesh("GoatHoof")
+    lathe(hoof, [(0.0, 0.0), (0.0, 0.03), (0.02, 0.029), (0.04, 0.024), (0.046, 0.0)], 12, group=1)
+    hoof.save()
+
+
+def goat_fur_png(size=256):
+    """Goat coat colors around the body: a dark stripe along the back, brown sides, a cream belly.
+    Across the picture = around the tube (the back is at 1/4, the belly at 3/4), down it = along the body."""
+    rnd = random.Random(21)
+    dark, brown, cream = (82, 56, 38), (150, 102, 66), (224, 208, 182)
+    streak = [rnd.uniform(0.9, 1.1) for _ in range(size)]
+    rows = bytearray()
+    for y in range(size):
+        rows.append(0)
+        for x in range(size):
+            u = x / size
+            back = max(0.0, 1 - abs(u - 0.25) / 0.07)          # the stripe along the back
+            belly = max(0.0, min(1.0, (0.2 - abs(u - 0.75)) / 0.08))  # soft edge to the cream belly
+            color = [brown[c] + (cream[c] - brown[c]) * belly for c in range(3)]
+            color = [color[c] + (dark[c] - color[c]) * back for c in range(3)]
+            hair = streak[x] * (0.95 + 0.05 * math.sin(y * 0.9 + x * 0.3)) + rnd.uniform(-0.04, 0.04)
+            for c in range(3):
+                rows.append(int(max(0, min(255, color[c] * hair))))
+    write_png("GoatFur.png", size, rows)
+
+
+# ---------- the lawn inside the fence ----------
+# Tens of thousands of short grass blades in little tufts, all over the yard, so it looks like
+# a real pasture (not a flat picture). Not on the cart track, the buildings, the beds and the like.
+# Written in three parts with three shades of green (LawnA/B/C) so it doesn't look flat.
+# The farm is built in "world" coordinates; Unity shows .obj files mirrored in x, so x is flipped
+# when reading the cart track and when writing the lawn.
+
+LAWN_FREE_OF = [  # x from, x to, z from, z to (world, meters)
+    (-6.3, 6.3, 12.2, 21.8),    # the big barn
+    (7.3, 14.7, 15.3, 21.7),    # grandpa's house
+    (9.8, 12.2, 14.3, 15.4),    # its porch
+    (9.2, 13.8, 3.2, 8.4),      # the coop and its ramp
+    (8.4, 13.6, 10.3, 12.9),    # the garden beds
+    (14.3, 15.7, 10.1, 11.5),   # the mound / chest
+    (12.8, 14.4, 2.2, 3.0),     # the feeder
+    (14.3, 15.2, 1.7, 2.7),     # the grain sack
+    (12.8, 14.5, 13.9, 15.4),   # the water barrel and the watering can
+    (-5.1, -3.9, 11.4, 12.5),   # the barrel by the barn
+]
+
+
+def cart_track_triangles():
+    path = os.path.join(OUT, "..", "CountryArt", "CartTrack.obj")
+    verts, tris = [], []
+    for line in open(path):
+        if line.startswith("v "):
+            x, y, z = map(float, line.split()[1:4])
+            verts.append((-x, z))
+        elif line.startswith("f "):
+            idx = [int(t.split("/")[0]) - 1 for t in line.split()[1:]]
+            for k in range(1, len(idx) - 1):
+                tris.append((verts[idx[0]], verts[idx[k]], verts[idx[k + 1]]))
+    grid = {}  # 1 m cells -> triangles touching them, so each test looks at only a few
+    for tri in tris:
+        xs, zs = [p[0] for p in tri], [p[1] for p in tri]
+        for gx in range(int(math.floor(min(xs))), int(math.floor(max(xs))) + 1):
+            for gz in range(int(math.floor(min(zs))), int(math.floor(max(zs))) + 1):
+                grid.setdefault((gx, gz), []).append(tri)
+    return grid
+
+
+def on_track(grid, x, z, margin=0.15):
+    for tri in grid.get((int(math.floor(x)), int(math.floor(z))), []):
+        (ax, az), (bx, bz), (cx, cz) = tri
+        d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz)
+        if abs(d) < 1e-12:
+            continue
+        u = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d
+        v = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d
+        if u >= -margin and v >= -margin and 1 - u - v >= -margin:
+            return True
+    return False
+
+
+def lawn(tufts=6500):
+    rnd = random.Random(33)
+    grid = cart_track_triangles()
+
+    def free(x, z):
+        if not (-7.75 < x < 15.75 and -1.75 < z < 23.75):
+            return False
+        for x0, x1, z0, z1 in LAWN_FREE_OF:
+            if x0 <= x <= x1 and z0 <= z <= z1:
+                return False
+        return not on_track(grid, x, z)
+
+    parts = [Mesh("LawnA"), Mesh("LawnB"), Mesh("LawnC")]
+    for m in parts:
+        m.fixed_normals = []
+    made = 0
+    while made < tufts:
+        cx, cz = rnd.uniform(-7.75, 15.75), rnd.uniform(-1.75, 23.75)
+        if not free(cx, cz):
+            continue
+        made += 1
+        m = parts[rnd.randrange(3)]
+        tall = rnd.uniform(0.06, 0.14)
+        for b in range(rnd.randint(4, 8)):
+            x, z = cx + rnd.gauss(0, 0.05), cz + rnd.gauss(0, 0.05)
+            if not free(x, z):
+                continue
+            h = tall * rnd.uniform(0.7, 1.25)
+            a = rnd.uniform(0, TAU)
+            lean = (math.cos(a) * rnd.uniform(0.2, 0.5), math.sin(a) * rnd.uniform(0.2, 0.5))
+            w = 0.006
+            spin = rnd.uniform(0, TAU)
+            base = [(-(x + w * math.cos(spin + k * TAU / 3)), 0.0, z + w * math.sin(spin + k * TAU / 3)) for k in range(3)]
+            tip = (-(x + lean[0] * h), h, z + lean[1] * h)
+            ids = [m.vertex(p, (0.0, 0.0), 0) for p in base] + [m.vertex(tip, (0.0, 1.0), 0)]
+            up = norm((-lean[0] * 0.6, 1.0, lean[1] * 0.6))  # lit like a lawn, not like little sticks
+            m.fixed_normals += [up] * 4
+            inside = (-x, h * 0.25, z)
+            for k in range(3):
+                m.tri(ids[k], ids[(k + 1) % 3], ids[3], inside)
+    for m in parts:
+        m.save()
+
+
 # ---------- the burlap texture ----------
 
 def burlap_png(size=256, cell=8):
@@ -348,17 +531,20 @@ def burlap_png(size=256, cell=8):
             for c in range(3):
                 value = gap[c] + (base[c] - gap[c]) * k + fibre
                 rows.append(int(max(0, min(255, value))))
-    path = os.path.join(OUT, "Burlap.png")
+    write_png("Burlap.png", size, rows)
 
+
+def write_png(name, size, rows):
+    """Saves a square RGB picture; rows = for each line a 0 byte, then R, G, B for each pixel."""
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
 
-    with open(path, "wb") as out:
+    with open(os.path.join(OUT, name), "wb") as out:
         out.write(b"\x89PNG\r\n\x1a\n")
         out.write(chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)))
         out.write(chunk(b"IDAT", zlib.compress(bytes(rows), 9)))
         out.write(chunk(b"IEND", b""))
-    print("  %-18s %dx%d" % ("Burlap.png", size, size))
+    print("  %-18s %dx%d" % (name, size, size))
 
 
 def main():
@@ -369,7 +555,10 @@ def main():
     carrot_leaves()
     watering_can()
     grain_sack()
+    goat()
+    lawn()
     burlap_png()
+    goat_fur_png()
     print("Done.")
 
 

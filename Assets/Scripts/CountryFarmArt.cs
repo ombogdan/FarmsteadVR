@@ -36,6 +36,17 @@ public static class CountryFarmArt
             AddModel(tree,shape+"Wood","Bark",Vector3.zero,scale,yaw);
             AddModel(tree,shape+"Foliage",pine?"FirSpray":"LeafSpray",Vector3.zero,scale,yaw);
         }
+        // The old round green "bushes" (plain spheres at the forest edge and by the road)
+        // become leafy shrubs, the same kind as the hedge behind the barn.
+        foreach (var r in statics.GetComponentsInChildren<MeshRenderer>(true))
+        {
+            if (r.name != "Bush") continue;
+            r.enabled = false;
+            float size = r.transform.localScale.x / 1.6f;
+            Vector3 p = r.transform.localPosition;
+            float yaw = Mathf.Repeat(p.x * 37f + p.z * 23f, 360f);
+            AddModel(r.transform.parent, "Hedge", "HedgeSpray", new Vector3(p.x, 0f, p.z), 1.15f * size, yaw);
+        }
         AddModel(statics,"MeadowTufts","GrassBlade",Vector3.zero,1f,0);
         AddModel(statics,"OakCask","Barrel",new Vector3(-4.5f,0,11.95f),1.12f,30);
         AddModel(statics,"OakCask","Barrel",new Vector3(13.96f,0,14.9f),1f,150);
@@ -80,14 +91,7 @@ public static class CountryFarmArt
             float y=7.45f+i*.12f;
             Detail(barn,"Loft vent",new Vector3(0,y,-4.52f),new Vector3(1.7f-i*.12f,.075f,.12f),"Timber");
         }
-        var boris = world.Find("Goat Boris");
-        var head = boris.Find("Head");
-        foreach (var r in boris.GetComponentsInChildren<MeshRenderer>())
-            if (r.name=="Body" || r.name=="Leg" || r.name=="Skull" || r.name=="Horn") r.enabled=false;
-        AddModel(boris,"BorisCoat","Coat",Vector3.zero,1,0);
-        AddModel(boris,"BorisHooves","Hoof",Vector3.zero,1,0);
-        AddModel(head,"BorisFace","Coat",Vector3.zero,1,0);
-        AddModel(head,"BorisHorns","HornKeratin",Vector3.zero,1,0);
+        // Boris is now built from his own walking model (FarmWorldBuilder.Goat), nothing to dress.
         RenderSettings.skybox=Surface("Sky");
     }
 
