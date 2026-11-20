@@ -26,7 +26,8 @@ public static partial class FarmWorldBuilder
     public static readonly Vector3 BrokenFenceCenter = new Vector3(6f, 0f, FenceFront);
     public static readonly Vector3 CoopPosition = new Vector3(11.5f, 0f, 6f);
     public const float CoopRidge = 4.15f; // height of the repaired coop's roof top (Zhora lands there)
-    public const int NestCount = 4;
+    public const int NestCount = 4;             // nests in one row; the coop has 2 rows, the upgrade adds 6 more
+    public const int NestsBase = 8, NestsUpgraded = 14;
     public static readonly Vector3 StallPosition = new Vector3(-5.5f, 0f, -9.5f); // Marquis's shop, by the road
 
     // The chickens' night: in through the coop door, then to their sleeping spots.
@@ -259,27 +260,27 @@ public static partial class FarmWorldBuilder
         Shape("Seeds", PrimitiveType.Sphere, new Vector3(0f, 0f, -0.02f), new Vector3(0.24f, 0.24f, 0.06f), "DarkWood", flower);
     }
 
-    // The big red barn with white trims, like on classic farms.
+    // The big red barn with white trims, like on classic farms. You can walk in once its big doors
+    // are open (FarmPrototype.Barn.cs): inside are stalls for cows (left), pens for goats (right),
+    // hay bales and a hayloft. The doors themselves move, so they are built separately (BarnDoors).
     static void Barn(Vector3 position)
     {
         Transform barn = Group("Big Barn", statics, position);
-        const float width = 12f, height = 7f, depth = 9f;
-        Shape("Walls", PrimitiveType.Cube, new Vector3(0f, height / 2f, 0f), new Vector3(width, height, depth), "Barn", barn, true);
-        GableRoof(barn, width, height, depth, 35f, "Roof", "Barn");
+        const float width = 12f, height = 7f, depth = 9f, wall = 0.2f;
+        Shape("Walls", PrimitiveType.Cube, new Vector3(0f, height / 2f, depth / 2f - wall / 2f), new Vector3(width, height, wall), "Barn", barn, true);
+        foreach (float side in new[] { -1f, 1f })
+        {
+            Shape("Walls", PrimitiveType.Cube, new Vector3(side * (width / 2f - wall / 2f), height / 2f, 0f), new Vector3(wall, height, depth), "Barn", barn, true);
+            Shape("Walls", PrimitiveType.Cube, new Vector3(side * 4.125f, height / 2f, -depth / 2f + wall / 2f), new Vector3(3.75f, height, wall), "Barn", barn, true);
+        }
+        Shape("Walls", PrimitiveType.Cube, new Vector3(0f, 5.625f, -depth / 2f + wall / 2f), new Vector3(4.5f, 2.75f, wall), "Barn", barn, true);
+        GableRoof(barn, width, height, depth, 35f, "Roof", "Barn", hollow: true);
 
         float front = -depth / 2f - 0.05f;
-        Shape("Door", PrimitiveType.Cube, new Vector3(-1.15f, 2.1f, front), new Vector3(2.2f, 4.2f, 0.1f), "DarkWood", barn);
-        Shape("Door", PrimitiveType.Cube, new Vector3(1.15f, 2.1f, front), new Vector3(2.2f, 4.2f, 0.1f), "DarkWood", barn);
         float trim = front - 0.04f;
         Trim(barn, new Vector3(0f, 4.3f, trim), new Vector3(4.8f, 0.18f, 0.06f), 0f);
         Trim(barn, new Vector3(-2.35f, 2.15f, trim), new Vector3(0.18f, 4.3f, 0.06f), 0f);
         Trim(barn, new Vector3(2.35f, 2.15f, trim), new Vector3(0.18f, 4.3f, 0.06f), 0f);
-        Trim(barn, new Vector3(0f, 2.15f, trim), new Vector3(0.12f, 4.3f, 0.06f), 0f);
-        foreach (float x in new[] { -1.15f, 1.15f })
-        {
-            Trim(barn, new Vector3(x, 2.1f, trim - 0.01f), new Vector3(0.12f, 4.6f, 0.05f), 27f);
-            Trim(barn, new Vector3(x, 2.1f, trim - 0.01f), new Vector3(0.12f, 4.6f, 0.05f), -27f);
-        }
         Shape("Hayloft Door", PrimitiveType.Cube, new Vector3(0f, 5.7f, front), new Vector3(2f, 1.6f, 0.1f), "DarkWood", barn);
         Trim(barn, new Vector3(0f, 6.55f, trim), new Vector3(2.3f, 0.15f, 0.06f), 0f);
         Trim(barn, new Vector3(0f, 4.85f, trim), new Vector3(2.3f, 0.15f, 0.06f), 0f);
@@ -287,6 +288,27 @@ public static partial class FarmWorldBuilder
         Trim(barn, new Vector3(1.08f, 5.7f, trim), new Vector3(0.15f, 1.85f, 0.06f), 0f);
         Trim(barn, new Vector3(-width / 2f + 0.1f, height / 2f, trim), new Vector3(0.2f, height, 0.08f), 0f);
         Trim(barn, new Vector3(width / 2f - 0.1f, height / 2f, trim), new Vector3(0.2f, height, 0.08f), 0f);
+
+        // Inside: a floor, cow stalls on the left, goat pens on the right, hay at the back, a hayloft above it.
+        Shape("Floor", PrimitiveType.Cube, new Vector3(0f, 0.03f, 0f), new Vector3(width - 0.4f, 0.06f, depth - 0.4f), "Wood", barn, true);
+        foreach (float z in new[] { -3f, 0f, 3f })
+            Shape("Stall Wall", PrimitiveType.Cube, new Vector3(-4.6f, 0.6f, z), new Vector3(2.6f, 1.2f, 0.08f), "Wood", barn, true);
+        foreach (float z in new[] { -3.2f, -1.2f, 0.8f, 2.8f })
+            Shape("Pen Wall", PrimitiveType.Cube, new Vector3(4.7f, 0.5f, z), new Vector3(2.4f, 1f, 0.08f), "Wood", barn, true);
+        foreach (float side in new[] { -1f, 1f })
+        {
+            Shape("Feed Trough", PrimitiveType.Cube, new Vector3(side * 5.6f, 0.35f, 0f), new Vector3(0.4f, 0.3f, 7.6f), "Wood", barn);
+            Shape("Trough Hay", PrimitiveType.Cube, new Vector3(side * 5.6f, 0.52f, 0f), new Vector3(0.32f, 0.06f, 7.4f), "Straw", barn);
+        }
+        for (int i = 0; i < 6; i++)
+            Shape("Hay Bale", PrimitiveType.Cube, new Vector3(-1.4f + (i % 3) * 1.25f, 0.27f + (i / 3) * 0.52f, 3.6f), new Vector3(1.2f, 0.5f, 0.6f), "Straw", barn, i < 3);
+        Shape("Hayloft", PrimitiveType.Cube, new Vector3(0f, 3.6f, 2.9f), new Vector3(width - 0.5f, 0.15f, 2.8f), "Wood", barn);
+        foreach (float x in new[] { -3f, 3f })
+            Shape("Hayloft Post", PrimitiveType.Cube, new Vector3(x, 1.8f, 1.6f), new Vector3(0.18f, 3.6f, 0.18f), "Wood", barn, true);
+        for (int i = 0; i < 5; i++)
+            Shape("Loft Hay", PrimitiveType.Cube, new Vector3(-4f + i * 2f, 3.95f, 3.2f), new Vector3(1.5f, 0.55f, 1.6f), "Straw", barn);
+        GameObject ladder = Shape("Ladder", PrimitiveType.Cube, new Vector3(2.2f, 1.8f, 1.15f), new Vector3(0.5f, 4f, 0.06f), "Wood", barn);
+        ladder.transform.localRotation = Quaternion.Euler(-12f, 0f, 0f);
     }
 
     static void Trim(Transform parent, Vector3 position, Vector3 size, float tilt)
@@ -465,16 +487,21 @@ public static partial class FarmWorldBuilder
         Shape("Above Door", PrimitiveType.Cube, new Vector3(0f, height - 0.25f, -depth / 2f + wall / 2f), new Vector3(doorway, 0.5f, wall), "FreshWood", fresh, true);
         GableRoof(fresh, width, height, depth, 35f, "ToolboxRed", "FreshWood", hollow: true);
         Shape("Straw Floor", PrimitiveType.Cube, new Vector3(0f, 0.03f, 0f), new Vector3(width - 0.2f, 0.06f, depth - 0.2f), "Straw", fresh);
-        Shape("Nest Shelf", PrimitiveType.Cube, new Vector3(0f, 0.6f, depth / 2f - 0.45f), new Vector3(width - 0.4f, 0.06f, 0.65f), "Wood", fresh);
-        for (int i = 0; i < NestCount; i++)
+        // Two rows of 4 nests along the whole back wall (eggs appear at "Nest Spot 0..7").
+        for (int row = 0; row < 2; row++)
         {
-            float x = -1.2f + i * 0.8f;
-            Shape("Nest", PrimitiveType.Cube, new Vector3(x, 0.72f, depth / 2f - 0.45f), new Vector3(0.6f, 0.18f, 0.5f), "Wood", fresh);
-            Shape("Nest Straw", PrimitiveType.Sphere, new Vector3(x, 0.8f, depth / 2f - 0.45f), new Vector3(0.45f, 0.1f, 0.38f), "Straw", fresh);
-            Group("Nest Spot " + i, fresh, new Vector3(x, 0.84f, depth / 2f - 0.45f)); // where an egg appears
+            float shelf = row == 0 ? 0.6f : 1.32f;
+            Shape("Nest Shelf", PrimitiveType.Cube, new Vector3(0f, shelf, depth / 2f - 0.45f), new Vector3(width - 0.4f, 0.06f, 0.65f), "Wood", fresh);
+            for (int i = 0; i < NestCount; i++)
+            {
+                float x = -1.2f + i * 0.8f;
+                Shape("Nest", PrimitiveType.Cube, new Vector3(x, shelf + 0.12f, depth / 2f - 0.45f), new Vector3(0.6f, 0.18f, 0.5f), "Wood", fresh);
+                Shape("Nest Straw", PrimitiveType.Sphere, new Vector3(x, shelf + 0.2f, depth / 2f - 0.45f), new Vector3(0.45f, 0.1f, 0.38f), "Straw", fresh);
+                Group("Nest Spot " + (row * NestCount + i), fresh, new Vector3(x, shelf + 0.24f, depth / 2f - 0.45f)); // where an egg appears
+            }
         }
         Shape("Perch", PrimitiveType.Cube, new Vector3(-width / 2f + 0.4f, 1.1f, 0f), new Vector3(0.08f, 0.08f, depth - 0.6f), "Wood", fresh);
-        Shape("Window", PrimitiveType.Sphere, new Vector3(width / 2f + 0.01f, 1.6f, 0f), new Vector3(0.05f, 0.5f, 0.5f), "Glass", fresh);
+        Shape("Window", PrimitiveType.Sphere, new Vector3(width / 2f + 0.01f, 1.95f, 0f), new Vector3(0.05f, 0.45f, 0.45f), "Glass", fresh);
         Shape("Trim", PrimitiveType.Cube, new Vector3(-doorway / 2f - 0.05f, 1.05f, -depth / 2f - 0.01f), new Vector3(0.1f, 2.1f, 0.04f), "Paint", fresh);
         Shape("Trim", PrimitiveType.Cube, new Vector3(doorway / 2f + 0.05f, 1.05f, -depth / 2f - 0.01f), new Vector3(0.1f, 2.1f, 0.04f), "Paint", fresh);
         GameObject newRamp = Shape("Ramp", PrimitiveType.Cube, new Vector3(0f, 0.08f, -depth / 2f - 0.45f), new Vector3(1f, 0.05f, 0.9f), "Wood", fresh);
@@ -483,21 +510,24 @@ public static partial class FarmWorldBuilder
         Shape("Vane Arrow", PrimitiveType.Cube, new Vector3(0f, CoopRidge + 0.5f, 1.4f), new Vector3(0.04f, 0.04f, 0.5f), "Metal", fresh);
         fresh.gameObject.SetActive(false);
 
-        // The bigger coop (Marquis sells the upgrade): a second shelf with 4 more nests above the first,
-        // a little ladder for the hens, a second window. Room for 4 more hens. Pops in part by part.
+        // The bigger coop (Marquis sells the upgrade): two more rows of nests along the right wall
+        // (3 + 3, "Nest Spot 8..13"), a ladder for the hens, a window on the left wall. Room for 4 more hens.
         Transform upgrade = Group("Coop Upgrade", world, position);
-        Shape("Upper Shelf", PrimitiveType.Cube, new Vector3(0f, 1.32f, depth / 2f - 0.45f), new Vector3(width - 0.4f, 0.06f, 0.65f), "FreshWood", upgrade);
-        for (int i = 0; i < NestCount; i++)
+        for (int row = 0; row < 2; row++)
         {
-            float x = -1.2f + i * 0.8f;
-            Shape("Nest", PrimitiveType.Cube, new Vector3(x, 1.44f, depth / 2f - 0.45f), new Vector3(0.6f, 0.18f, 0.5f), "FreshWood", upgrade);
-            Shape("Nest Straw", PrimitiveType.Sphere, new Vector3(x, 1.52f, depth / 2f - 0.45f), new Vector3(0.45f, 0.1f, 0.38f), "Straw", upgrade);
-            Group("Nest Spot " + (NestCount + i), upgrade, new Vector3(x, 1.56f, depth / 2f - 0.45f));
+            float shelf = row == 0 ? 0.6f : 1.32f;
+            Shape("Side Shelf", PrimitiveType.Cube, new Vector3(width / 2f - 0.45f, shelf, -0.2f), new Vector3(0.65f, 0.06f, 2.6f), "FreshWood", upgrade);
+            for (int i = 0; i < 3; i++)
+            {
+                float z = -1.1f + i * 0.8f;
+                Shape("Nest", PrimitiveType.Cube, new Vector3(width / 2f - 0.45f, shelf + 0.12f, z), new Vector3(0.5f, 0.18f, 0.6f), "FreshWood", upgrade);
+                Shape("Nest Straw", PrimitiveType.Sphere, new Vector3(width / 2f - 0.45f, shelf + 0.2f, z), new Vector3(0.38f, 0.1f, 0.45f), "Straw", upgrade);
+                Group("Nest Spot " + (2 * NestCount + row * 3 + i), upgrade, new Vector3(width / 2f - 0.45f, shelf + 0.24f, z));
+            }
         }
-        Transform ladder = Group("Hen Ladder", upgrade, new Vector3(1.55f, 0f, depth / 2f - 0.95f));
-        GameObject rails = Shape("Ladder", PrimitiveType.Cube, new Vector3(0f, 0.7f, 0f), new Vector3(0.3f, 0.04f, 1.6f), "FreshWood", ladder);
-        rails.transform.localRotation = Quaternion.Euler(-60f, 0f, 0f);
-        Shape("Window", PrimitiveType.Sphere, new Vector3(-width / 2f - 0.01f, 1.6f, 0f), new Vector3(0.05f, 0.5f, 0.5f), "Glass", upgrade);
+        GameObject henLadder = Shape("Hen Ladder", PrimitiveType.Cube, new Vector3(width / 2f - 1.1f, 0.7f, 0.9f), new Vector3(0.3f, 0.04f, 1.6f), "FreshWood", upgrade);
+        henLadder.transform.localRotation = Quaternion.Euler(-60f, 90f, 0f);
+        Shape("Window", PrimitiveType.Sphere, new Vector3(-width / 2f - 0.01f, 1.95f, 0f), new Vector3(0.05f, 0.45f, 0.45f), "Glass", upgrade);
         upgrade.gameObject.SetActive(false);
 
         Transform coop = Group("Chicken Coop", world, position);
@@ -769,6 +799,7 @@ public static partial class FarmWorldBuilder
         new Rect(14.35f, 1.8f, 0.8f, 0.8f),  // the grain sack
         new Rect(8.4f, 10.3f, 5.2f, 2.6f),   // the garden beds
         new Rect(14.3f, 10.1f, 1.4f, 1.4f),  // the mound / chest
+        new Rect(4.3f, 7.9f, 1.8f, 1.8f),    // the well
     };
 
     // A walk from anywhere in the yard to the front of the coop that goes around it, never

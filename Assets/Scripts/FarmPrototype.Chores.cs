@@ -23,8 +23,8 @@ public partial class FarmPrototype
     // Where each horseshoe hides (the same order as in FarmWorldBuilder.Chores.cs).
     static readonly string[] HorseshoeHints =
     {
-        "біля автобусної зупинки", "у лісі, біля пенька", "за великою стодолою",
-        "над дверима старого будинку", "у курнику, над гніздами",
+        "на стовпі автобусної зупинки", "на старому колодязі", "на воротах великої стодоли",
+        "над дверима будинку діда Панаса", "у курнику, над гніздами",
     };
 
     static readonly string[] BorisSecretLines =
@@ -171,6 +171,9 @@ public partial class FarmPrototype
                 return "Город діда Панаса — грядки перед хатою. " + GardenStep();
             case Stage.RepairHouse:
                 return HouseText();
+            case Stage.OpenBarn:
+            case Stage.BarnOpen:
+                return BarnQuestText();
             case Stage.EpisodeDone:
                 return "Перший епізод пройдено! Ярмарок — у наступному етапі гри. А поки: збирай яйця, вирощуй моркву й продавай Маркізу.";
             default:
@@ -236,6 +239,7 @@ public partial class FarmPrototype
         houseAction.SetLabel(HouseLabel());
         houseGlow.SetActive(stage == Stage.RepairHouse && Has("planks") && Has("paint"));
         marquisAction.SetLabel(stage >= Stage.Trading ? "лавка Маркіза: купити" : "поговорити з Маркізом");
+        barnAction.SetLabel(stage >= Stage.BarnOpen ? "стодола" : stage == Stage.OpenBarn ? "відімкнути стодолу ключем" : "оглянути стару стодолу");
     }
 
     string BedLabel(int i)
@@ -794,7 +798,7 @@ public partial class FarmPrototype
         yield return BorisComesOver();
         if (!InDialogue)
             StartDialogue(goat, "Борис", BorisFinale, () =>
-                Say("Кінець першого епізоду! Ярмарок — у наступному етапі гри. А поки — збирай яйця, вирощуй моркву й продавай Маркізу.", 10f));
+                GiveBarnKey());
     }
 
     // Fresh paint: the old cracked plaster of the house becomes a clean, light one.

@@ -2,9 +2,9 @@ using System.Collections.Generic;
 using UnityEngine;
 
 // Stage 4 (part of FarmPrototype, see FarmPrototype.cs): Marquis's shop by the road.
-// Two separate menus (ShopMenu.cs), each a list of buttons in the air, in pages:
-// - BUY: point at Marquis (or at the goods on his counter) -> everything he sells;
-// - SELL: point at the basket on the counter -> what you have to sell and for how much.
+// Two separate windows (ShopWindow.cs): goods on the left, a basket on the right.
+// - BUY: point at Marquis (or at the goods on his counter); drag goods into the basket, press КУПИТИ;
+// - SELL: point at the basket on the counter; drag your eggs/carrots into it, press ПРОДАТИ.
 // To add a new thing to the shop: give it a name (ItemNames), a price (Prices) and put it in Catalog.
 // At night the shop is closed.
 public partial class FarmPrototype
@@ -17,10 +17,10 @@ public partial class FarmPrototype
     static readonly Dictionary<string, int> Prices = new Dictionary<string, int>
     {
         { "hen", 5 }, { "seeds", 4 }, { "shovel", 8 }, { "rake", 8 }, { "planks", 15 }, { "paint", 10 },
-        { "coop_upgrade", CoopUpgradePrice },
+        { "coop_upgrade", CoopUpgradePrice }, { "cow", 40 }, { "goat", 20 },
     };
     // The BUY menu, in this order.
-    static readonly string[] Catalog = { "hen", "seeds", "shovel", "rake", "planks", "paint", "coop_upgrade" };
+    static readonly string[] Catalog = { "hen", "seeds", "shovel", "rake", "planks", "paint", "coop_upgrade", "cow", "goat" };
     // What Marquis buys, and for how much.
     static readonly Dictionary<string, int> SellPrices = new Dictionary<string, int> { { "egg", EggPrice }, { "carrot", CarrotPrice } };
 
@@ -44,8 +44,10 @@ public partial class FarmPrototype
     FarmInteractable marquisAction;
     GameObject basketGlow;
     int marquisTalk;
-    ShopMenu shopMenu;
+    ShopWindow shopWindow;
     bool menuSelling;
+    readonly Dictionary<string, int> cart = new Dictionary<string, int>();
+    readonly List<string> cartOrder = new List<string>();
 
     void FindShopParts()
     {
@@ -71,11 +73,11 @@ public partial class FarmPrototype
     void UpdateShop()
     {
         if (stage == Stage.MeetMarquis && PlayerDistance(marquis.transform) < 4f) MeetMarquis();
-        if (shopMenu == null || !shopMenu.IsOpen) return;
-        shopMenu.Hover(aimedAt);
-        // Walked away, or night fell: the menu closes by itself.
-        if (FlatDistance(playerCamera.transform.position, shopMenu.Position) > 2.5f) CloseShop();
-        else if (dayNight.IsNight)
+        if (shopWindow == null || !shopWindow.IsOpen) return;
+        shopWindow.Tick(FarmInput.InteractPressed(), FarmInput.InteractHeld(), FarmInput.InteractReleased());
+        // Walked away, or night fell: the window closes by itself.
+        if (shopWindow.IsOpen && FlatDistance(playerCamera.transform.position, shopWindow.transform.position) > 2.5f) CloseShop();
+        else if (shopWindow.IsOpen && dayNight.IsNight)
         {
             CloseShop();
             MarquisSays("Мур-р... Темніє. Зачиняюсь до ранку!");
@@ -132,62 +134,82 @@ public partial class FarmPrototype
         return true;
     }
 
-    // ---------- the menus ----------
+    // ---------- the shop window: goods on the left, the basket on the right ----------
 
     void OpenShop(bool selling)
     {
         if (!ShopReady()) return;
-        if (shopMenu == null) shopMenu = new ShopMenu();
+        if (shopWindow == null)
+        {
+            shopWindow = ShopWindow.Create();
+            shopWindow.OnAction = ShopAction;
+        }
         menuSelling = selling;
-        shopMenu.Open(playerCamera.transform);
-        FarmAudio.Play2D("page_turn", 0.6f);
-        RefreshShopMenu();
+        cart.Clear();
+        cartOrder.Clear();
+        shopWindow.Open(playerCamera.transform);
+        RefreshShopWindow();
     }
 
     void CloseShop()
     {
-        if (shopMenu != null && shopMenu.IsOpen) shopMenu.Close();
+        if (shopWindow != null && shopWindow.IsOpen) shopWindow.Close();
+        cart.Clear();
+        cartOrder.Clear();
     }
 
-    void RefreshShopMenu()
+    int InCart(string id) => cart.TryGetValue(id, out int n) ? n : 0;
+
+    void RefreshShopWindow()
     {
-        var lines = new List<ShopMenu.Line>();
-        string title;
+        var goods = new List<ShopWindow.Entry>();
+        var lines = new List<ShopWindow.Entry>();
+        int total = 0;
         if (menuSelling)
         {
-            title = "ПРОДАТИ Маркізу\nу тебе " + CoinsText(coins);
-            int total = 0, kinds = 0;
             foreach (var price in SellPrices)
             {
                 int have = ItemCount(price.Key);
                 if (have == 0) continue;
-                total += have * price.Value;
-                kinds++;
-                lines.Add(new ShopMenu.Line
-                {
-                    text = ItemName(price.Key) + " ×" + have + "  (по " + price.Value + ")  →  " + CoinsText(have * price.Value),
-                    action = "sell:" + price.Key,
-                });
+                int left = have - InCart(price.Key);
+                goods.Add(new ShopWindow.Entry { id = price.Key, text = ItemName(price.Key) + " ×" + left + "   по " + price.Value, dim = left == 0, look = ItemModel(price.Key) });
             }
-            if (kinds > 1) lines.Insert(0, new ShopMenu.Line { text = "Продати все  →  " + CoinsText(total), action = "sell:all" });
-            if (kinds == 0) lines.Add(new ShopMenu.Line { text = "Поки нічого продати.\nНеси яйця й моркву!", dim = true });
-        }
-        else
-        {
-            title = "КУПИТИ в Маркіза\nу тебе " + CoinsText(coins);
-            foreach (string id in Catalog)
+            foreach (string id in cartOrder)
             {
-                if (id == "coop_upgrade" && stage < Stage.Trading) continue;
-                string why = CantBuy(id);
-                lines.Add(new ShopMenu.Line
-                {
-                    text = GoodsName(id) + "  —  " + CoinsText(Prices[id]) + (why != null ? "\n(" + why + ")" : ""),
-                    action = "buy:" + id,
-                    dim = why != null || coins < Prices[id],
-                });
+                total += cart[id] * SellPrices[id];
+                lines.Add(new ShopWindow.Entry { id = id, text = ItemName(id) + " ×" + cart[id] + "  =  " + cart[id] * SellPrices[id], look = ItemModel(id) });
             }
+            shopWindow.Show("ЛАВКА МАРКІЗА — ПРОДАТИ", "Твої речі", goods, true, "На продаж", lines,
+                "Отримаєш: " + CoinsText(total), "ПРОДАТИ", cart.Count > 0);
+            return;
         }
-        shopMenu.Show(title, lines);
+        foreach (string id in Catalog)
+        {
+            if (!InCatalog(id)) continue;
+            string why = CantBuy(id);
+            goods.Add(new ShopWindow.Entry
+            {
+                id = id,
+                text = GoodsName(id) + " — " + Prices[id] + (why != null ? "  (" + why + ")" : ""),
+                dim = why != null || Prices[id] > coins,
+                look = GoodsLook(id),
+            });
+        }
+        foreach (string id in cartOrder)
+        {
+            total += cart[id] * Prices[id];
+            lines.Add(new ShopWindow.Entry { id = id, text = GoodsName(id) + (cart[id] > 1 ? " ×" + cart[id] : "") + "  =  " + cart[id] * Prices[id], look = GoodsLook(id) });
+        }
+        bool afford = total <= coins;
+        shopWindow.Show("ЛАВКА МАРКІЗА — КУПИТИ", "Товари (у тебе " + CoinsText(coins) + ")", goods, false, "Кошик", lines,
+            (afford ? "Разом: " : "Бракує монет! Разом: ") + CoinsText(total), "КУПИТИ", cart.Count > 0 && afford);
+    }
+
+    bool InCatalog(string id)
+    {
+        if (id == "coop_upgrade") return stage >= Stage.Trading;
+        if (id == "cow" || id == "goat") return stage >= Stage.OpenBarn;
+        return true;
     }
 
     string GoodsName(string id)
@@ -196,9 +218,20 @@ public partial class FarmPrototype
         {
             case "hen": return "Курочка";
             case "seeds": return "Насіння моркви ×" + SeedsInPack;
-            case "coop_upgrade": return "Розширити курник (+4 гнізда)";
+            case "coop_upgrade": return "Розширити курник";
+            case "cow": return "Корова";
+            case "goat": return "Кізочка";
             default: return ItemName(id);
         }
+    }
+
+    // A small model for the line in the window (what it looks like).
+    GameObject GoodsLook(string id)
+    {
+        if (id == "hen") return ItemModel("egg");
+        if (id == "coop_upgrade") return ItemModel("planks");
+        if (id == "cow" || id == "goat") return null;
+        return ItemModel(id);
     }
 
     // Why you can't buy it right now (null = you can, if you have the coins).
@@ -208,93 +241,133 @@ public partial class FarmPrototype
         if ((id == "shovel" || id == "rake" || id == "planks" || id == "paint") && Has(id)) return "уже є";
         if ((id == "planks" || id == "paint") && stage >= Stage.EpisodeDone) return "будинок уже як новий";
         if (id == "coop_upgrade" && coopUpgraded) return "уже розширено";
+        if ((id == "cow" || id == "goat") && stage < Stage.BarnOpen) return "відкриється: відчини стодолу";
+        if (id == "cow" && goatsBought < 2) return "відкриється, коли матимеш 2 кізочки";
+        if (id == "cow" && cowsBought >= cows.Count) return "у стодолі нема місця";
+        if (id == "goat" && goatsBought >= goats.Count) return "у стодолі нема місця";
         return null;
     }
 
-    // A button in the menu was pressed.
-    void PressMenu(string action)
+    // Can one more go into the basket?
+    string CantAddToCart(string id)
     {
-        if (shopMenu == null || !shopMenu.IsOpen) return;
-        if (action == "close")
-        {
-            FarmAudio.Play2D("tick", 0.5f);
-            CloseShop();
-            return;
-        }
-        if (action.StartsWith("page:"))
-        {
-            shopMenu.TurnPage(int.Parse(action.Substring(5)));
-            FarmAudio.Play2D("page_turn", 0.5f);
-        }
-        else if (action.StartsWith("buy:")) Buy(action.Substring(4));
-        else if (action == "sell:all") foreach (string id in SellPrices.Keys) Sell(id);
-        else if (action.StartsWith("sell:")) Sell(action.Substring(5));
-        if (shopMenu.IsOpen) RefreshShopMenu();
+        string why = CantBuy(id);
+        if (why != null) return why;
+        bool onlyOne = id == "shovel" || id == "rake" || id == "planks" || id == "paint" || id == "coop_upgrade";
+        if (onlyOne && InCart(id) >= 1) return "одного досить";
+        if (id == "hen" && hensBought + InCart(id) >= HenLimit) return "більше курочок не влізе";
+        if (id == "cow" && cowsBought + InCart(id) >= cows.Count) return "більше корів не влізе";
+        if (id == "goat" && goatsBought + InCart(id) >= goats.Count) return "більше кіз не влізе";
+        return null;
     }
 
-    void Sell(string id)
+    // Everything the window asks for: "add:id", "all:id", "remove:id", "page:1", "confirm", "close".
+    void ShopAction(string action)
     {
-        int have = ItemCount(id);
-        if (have == 0 || !SellPrices.TryGetValue(id, out int price)) return;
-        RemoveItem(id, have);
-        coins += have * price;
-        FarmAudio.Play2D("coin", 0.8f);
-        MarquisSays(Plural(have, id == "egg" ? "яйце" : "морквина", id == "egg" ? "яйця" : "морквини", id == "egg" ? "яєць" : "морквин")
-            + "? Мур-р, свіженькі! Тримай " + CoinsText(have * price) + ".");
+        if (shopWindow == null || !shopWindow.IsOpen) return;
+        int colon = action.IndexOf(':');
+        string what = colon >= 0 ? action.Substring(colon + 1) : "";
+        string verb = colon >= 0 ? action.Substring(0, colon) : action;
+        switch (verb)
+        {
+            case "close":
+                CloseShop();
+                return;
+            case "page":
+                shopWindow.Page += int.Parse(what);
+                FarmAudio.Play2D("page_turn", 0.5f);
+                break;
+            case "add":
+            case "all":
+                string why = menuSelling ? (InCart(what) >= ItemCount(what) ? "більше немає" : null) : CantAddToCart(what);
+                if (why != null)
+                {
+                    FarmAudio.Play2D("nope", 0.6f);
+                    MarquisSays("Мур... " + char.ToUpper(why[0]) + why.Substring(1) + ".");
+                    break;
+                }
+                if (!cart.ContainsKey(what)) cartOrder.Add(what);
+                cart[what] = verb == "all" ? ItemCount(what) : InCart(what) + 1;
+                FarmAudio.Play2D("pop", 0.5f, 1.2f);
+                break;
+            case "remove":
+                if (InCart(what) <= 1)
+                {
+                    cart.Remove(what);
+                    cartOrder.Remove(what);
+                }
+                else cart[what]--;
+                FarmAudio.Play2D("pop", 0.4f, 0.9f);
+                break;
+            case "confirm":
+                if (menuSelling) SellCart();
+                else BuyCart();
+                break;
+        }
+        if (shopWindow.IsOpen) RefreshShopWindow();
+    }
+
+    void SellCart()
+    {
+        int total = 0, pieces = 0;
+        foreach (string id in cartOrder)
+        {
+            int n = Mathf.Min(cart[id], ItemCount(id));
+            RemoveItem(id, n);
+            total += n * SellPrices[id];
+            pieces += n;
+        }
+        cart.Clear();
+        cartOrder.Clear();
+        coins += total;
+        FarmAudio.Play2D("coin", 0.9f);
+        MarquisSays(Plural(pieces, "штука", "штуки", "штук") + "? Мур-р, свіженьке! Тримай " + CoinsText(total) + ".");
         SaveGame();
     }
 
-    void Buy(string id)
+    void BuyCart()
     {
-        if (!ShopReady()) return;
-        string why = CantBuy(id);
-        if (why != null)
+        int total = 0;
+        foreach (string id in cartOrder) total += cart[id] * Prices[id];
+        if (total > coins)
         {
             FarmAudio.Play2D("nope", 0.6f);
-            MarquisSays(id == "hen" && !coopUpgraded && hensBought < hens.Count
-                ? "Мур... Твоїм курочкам уже тісно. Спершу розшир курник!"
-                : "Мур... " + char.ToUpper(why[0]) + why.Substring(1) + ".");
+            Say("Разом " + CoinsText(total) + ", а в тебе " + CoinsText(coins) + ".", 5f);
             return;
         }
-        int price = Prices[id];
-        if (coins < price)
-        {
-            FarmAudio.Play2D("nope", 0.6f);
-            Say("Це коштує " + CoinsText(price) + ", а в тебе " + CoinsText(coins) + ".", 5f);
-            return;
-        }
-
-        coins -= price;
+        coins -= total;
         FarmAudio.Play2D("coin", 0.6f);
-        if (id == "hen") BuyShopHen();
-        else if (id == "coop_upgrade")
-        {
-            CloseShop();
-            MarquisSays("Мур! Мої майстри вже біжать до твого курника!");
-            StartCoroutine(UpgradeCoop()); // FarmPrototype.Eggs.cs
-        }
-        else if (id == "seeds")
-        {
-            AddItem(id, SeedsInPack);
-            FarmAudio.Play2D("pickup", 0.7f);
-            MarquisSays("Насіння моркви — " + SeedsInPack + " штуки. Посадиш — побачиш! Мур.");
-        }
-        else
-        {
-            AddItem(id);
-            FarmAudio.Play2D("pickup", 0.7f);
-            string later = id == "shovel" ? " Нею можна копати." : id == "rake" ? " Ними полють грядки." : "";
-            MarquisSays(ItemName(id) + " — твої! Мур." + later);
-        }
-
+        FarmAudio.Play2D("pickup", 0.7f);
+        bool showSomething = false; // things that happen out on the farm: close the window so you can watch
+        var bought = new List<string>(cartOrder);
+        var counts = new Dictionary<string, int>(cart);
+        cart.Clear();
+        cartOrder.Clear();
+        foreach (string id in bought)
+            for (int k = 0; k < counts[id]; k++)
+                showSomething |= Purchase(id);
+        MarquisSays("Мур! Дякую за покупку. Приходь ще!");
         if (Has("planks") && Has("paint") && !usedHints.Contains("#house"))
         {
             usedHints.Add("#house");
-            Say(stage >= Stage.RepairHouse
-                ? "Дошки й фарба є! Тепер — до будинку діда Панаса."
-                : "Дошки й фарба є! Вони знадобляться для ремонту будинку діда Панаса.", 8f);
+            Say(stage >= Stage.RepairHouse ? "Дошки й фарба є! Тепер — до будинку діда Панаса." : "Дошки й фарба є! Вони знадобляться для ремонту будинку діда Панаса.", 8f);
         }
+        if (showSomething) CloseShop();
         SaveGame();
+    }
+
+    // One bought thing. Returns true if something happens out on the farm (worth watching).
+    bool Purchase(string id)
+    {
+        switch (id)
+        {
+            case "hen": BuyShopHen(); return true;
+            case "seeds": AddItem(id, SeedsInPack); return false;
+            case "coop_upgrade": StartCoroutine(UpgradeCoop()); return true;   // FarmPrototype.Eggs.cs
+            case "cow": BuyAnimal(cows, cowsBought++); return true;              // FarmPrototype.Barn.cs
+            case "goat": BuyAnimal(goats, goatsBought++); return true;
+            default: AddItem(id); return false;
+        }
     }
 
     // The new hen appears in front of the coop and joins the others.

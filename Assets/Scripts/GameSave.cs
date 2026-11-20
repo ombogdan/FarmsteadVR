@@ -18,7 +18,11 @@ public class GameSave
     public bool[] nests = new bool[0];
     // stage 5 (FarmPrototype.Chores.cs)
     public int fedDay;                       // the day the hens were last fed (0 = never)
-    public bool coopUpgraded;                // the coop has its second row of nests (more hens fit)
+    public bool coopUpgraded;                // the coop has its extra nests (more hens fit)
+    public int cowsBought, goatsBought;      // the big animals (FarmPrototype.Barn.cs)
+    public int[] cowMilked = new int[0], goatMilked = new int[0]; // the day each one was last milked
+    public string[] taskIds = new string[0]; // side jobs (FarmPrototype.Tasks.cs)
+    public int[] taskNumbers = new int[0];   // for each: how many needed, done so far, coins
     public int horseshoes;                   // which horseshoes are found: one bit each
     public int[] beds = new int[0];          // each garden bed: weeds / clear / planted / growing / ripe
     public float[] bedGrowth = new float[0]; // 0..1 while growing

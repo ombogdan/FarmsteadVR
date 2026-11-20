@@ -14,7 +14,9 @@ public class VrHud : MonoBehaviour
     Transform head;
     Transform leftHand;
 
-    TextPlate message, bubble, task, inventory, hint, coins;
+    TextPlate message, bubble, task, inventory, hint, coins, banner, coinPop;
+    string lastBanner;
+    int lastPop = -1;
     Transform coinIcon;
     Transform itemModels;
 
@@ -29,6 +31,8 @@ public class VrHud : MonoBehaviour
     string lastDay;
     string inventoryText;
     Vector3 messagePosition;
+    Vector3 bannerPlace;
+    string bannerWrapped;
     bool messagePlaced;
     bool ready; // false if Start failed: then we stop instead of repeating the error every frame
 
@@ -49,6 +53,10 @@ public class VrHud : MonoBehaviour
         inventory = new TextPlate("VR Inventory", font, 40, 0.0028f, TextAlignment.Left);
         hint = new TextPlate("VR Hint", font, 44, 0.005f, TextAlignment.Center);
         coins = new TextPlate("VR Coins", font, 44, 0.0028f, TextAlignment.Left);
+        banner = new TextPlate("VR New Task", font, 52, 0.005f, TextAlignment.Center, "DarkWood");
+        coinPop = new TextPlate("VR Coin Pop", font, 52, 0.004f, TextAlignment.Center, null, new Color(1f, 0.85f, 0.25f));
+        banner.Hide();
+        coinPop.Hide();
         coinIcon = VrShapes.Create(PrimitiveType.Sphere, "Coin", coins.Root, "Yellow").transform;
         coinIcon.localScale = new Vector3(0.026f, 0.026f, 0.006f); // a flat yellow disk
         itemModels = new GameObject("VR Inventory Items").transform;
@@ -68,6 +76,39 @@ public class VrHud : MonoBehaviour
         UpdateMessages();
         UpdateHandItems();
         UpdateHint();
+        UpdateTransitions();
+    }
+
+    // "НОВЕ ЗАВДАННЯ" pops up in front of you (grows with a bounce, floats up, shrinks away),
+    // and "+N" jumps up from the coin badge on your wrist.
+    void UpdateTransitions()
+    {
+        float age = farm.BannerAge;
+        if (age < 3.5f)
+        {
+            if (!ReferenceEquals(farm.BannerText, lastBanner))
+            {
+                lastBanner = farm.BannerText;
+                bannerWrapped = "НОВЕ ЗАВДАННЯ\n\n" + TextPlate.Wrap(lastBanner, 34);
+            }
+            Vector3 flat = Vector3.ProjectOnPlane(head.forward, Vector3.up);
+            if (flat.sqrMagnitude < 0.01f) flat = Vector3.forward;
+            if (age < 0.05f || !banner.Root.gameObject.activeSelf) bannerPlace = head.position + flat.normalized * 1.6f + Vector3.up * 0.25f;
+            float grow = Mathf.Clamp01(age / 0.35f);
+            float bounce = 1f + 2.70158f * Mathf.Pow(grow - 1f, 3f) + 1.70158f * Mathf.Pow(grow - 1f, 2f);
+            float shrink = Mathf.Clamp01((3.5f - age) / 0.35f);
+            banner.Show(bannerWrapped, bannerPlace + Vector3.up * age * 0.03f, head, Mathf.Max(0.01f, bounce * shrink));
+        }
+        else banner.Hide();
+
+        float pop = farm.CoinDeltaAge;
+        if (pop < 1.3f && leftHand != null)
+        {
+            if (farm.CoinDelta != lastPop) lastPop = farm.CoinDelta;
+            Vector3 wrist = leftHand.position + leftHand.up * 0.045f - leftHand.forward * 0.07f;
+            coinPop.Show("+" + lastPop, wrist + Vector3.up * (0.05f + 0.15f * pop), head, 1f + 0.5f * Mathf.Sin(Mathf.Min(1f, pop * 3f) * Mathf.PI));
+        }
+        else coinPop.Hide();
     }
 
     // Boris talks in a bubble above his head; other messages float in front of you.

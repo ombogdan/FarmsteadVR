@@ -601,6 +601,15 @@ public partial class FarmPrototype
     void StoryAfterLoad()
     {
         if (stage == Stage.MeetZhora) StartCoroutine(ResumeZhoraIntro());
+        if (stage == Stage.EpisodeDone) StartCoroutine(KeyAfterLoad()); // saved before the barn existed
+    }
+
+    IEnumerator KeyAfterLoad()
+    {
+        yield return new WaitForSeconds(4f);
+        SpeakerSays(goat, "Борис: Ме-е! Ледь не забув — ось ключ від стодоли діда Панаса.", 5f);
+        yield return new WaitForSeconds(2f);
+        GiveBarnKey();
     }
 
     IEnumerator ResumeZhoraIntro()

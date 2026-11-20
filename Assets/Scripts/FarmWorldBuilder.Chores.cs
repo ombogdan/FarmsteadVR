@@ -33,20 +33,26 @@ public static partial class FarmWorldBuilder
     const float BedHeight = 0.4f, SoilTop = 0.38f;
     public static Vector3 BedPosition(int i) => new Vector3(9.05f + i * 1.3f, 0f, 11.6f);
 
-    // Where the horseshoes hide. The last two hang on walls (over the house door, inside the coop).
+    // Where the horseshoes hide: at places of the farm that matter later (the bus stop - the bus to the fair,
+    // the well - water, the barn - the animals, grandpa's house, the coop). All hang on something.
     public const int HorseshoeCount = 5;
     static readonly Vector3[] HorseshoeSpots =
     {
-        new Vector3(6.75f, 0f, -10.35f),  // by the bus stop
-        new Vector3(-12.2f, 0f, -2.2f),   // in the forest, by the stump where the hammer was
-        new Vector3(2.5f, 0f, 22.2f),     // behind the big barn
-        new Vector3(11f, 2.78f, 15.44f),  // over the door of grandpa's house
-        new Vector3(12.7f, 1.7f, 7.87f),  // inside the coop, over the nests
+        new Vector3(2.8f, 1.6f, -11.654f),  // on the bus stop sign's pole (the side that looks at the farm)
+        new Vector3(5.75f, 1.25f, 8.74f),   // on a post of the old well
+        new Vector3(-1.1f, 2.9f, 12.33f),   // on the big barn's left door
+        new Vector3(11f, 2.78f, 15.44f),    // over the door of grandpa's house
+        new Vector3(12.7f, 1.7f, 7.87f),    // inside the coop, over the nests
     };
+    static readonly float[] HorseshoeYaw = { 180f, 0f, 0f, 0f, 0f }; // which way each one faces
 
     static void Chores()
     {
         Lawn();
+        Well();
+        BarnDoors();
+        Animals();
+        KeyLook();
         GrainSack();
         Feeder();
         Horseshoes();
@@ -117,6 +123,7 @@ public static partial class FarmWorldBuilder
         {
             bool onWall = HorseshoeSpots[i].y > 0.5f;
             Transform shoe = Group("Horseshoe " + i, world, HorseshoeSpots[i]);
+            shoe.localRotation = Quaternion.Euler(0f, HorseshoeYaw[i], 0f);
             BoxCollider hit = shoe.gameObject.AddComponent<BoxCollider>(); // generous, so the laser finds it
             hit.center = onWall ? new Vector3(0f, 0f, -0.1f) : new Vector3(0f, 0.12f, 0f);
             hit.size = onWall ? new Vector3(0.32f, 0.32f, 0.2f) : new Vector3(0.45f, 0.3f, 0.45f);
@@ -359,6 +366,171 @@ public static partial class FarmWorldBuilder
         GameObject root = Piece("Picture", PrimitiveType.Cube, new Vector3(-0.005f, 0.065f, -0.009f), new Vector3(0.022f, 0.07f, 0.003f), "FarmProps/CarrotSkin", parent);
         root.transform.localRotation = Quaternion.Euler(0f, 0f, 20f);
         Piece("Picture", PrimitiveType.Cube, new Vector3(0.008f, 0.108f, -0.009f), new Vector3(0.03f, 0.022f, 0.003f), "FarmProps/CarrotTop", parent);
+    }
+
+    // ---------- the old well (a horseshoe hangs on it; later: water) ----------
+
+    public static Vector3 WellPosition => new Vector3(5.2f, 0f, 8.8f);
+
+    static void Well()
+    {
+        Transform well = Group("Old Well", statics, WellPosition);
+        Shape("Well Ring", PrimitiveType.Cylinder, new Vector3(0f, 0.4f, 0f), new Vector3(1.1f, 0.4f, 1.1f), "House", well, true);
+        Shape("Water", PrimitiveType.Cylinder, new Vector3(0f, 0.7f, 0f), new Vector3(0.92f, 0.01f, 0.92f), "Glass", well);
+        foreach (float x in new[] { -0.55f, 0.55f })
+            Shape("Well Post", PrimitiveType.Cube, new Vector3(x, 0.95f, 0f), new Vector3(0.1f, 1.9f, 0.1f), "Wood", well, true);
+        foreach (float side in new[] { -1f, 1f })
+        {
+            GameObject roof = Shape("Well Roof", PrimitiveType.Cube, new Vector3(0f, 2.05f, side * 0.28f), new Vector3(1.4f, 0.05f, 0.7f), "Roof", well);
+            roof.transform.localRotation = Quaternion.Euler(side * 35f, 0f, 0f);
+        }
+        GameObject axle = Shape("Axle", PrimitiveType.Cylinder, new Vector3(0f, 1.45f, 0f), new Vector3(0.12f, 0.55f, 0.12f), "Wood", well);
+        axle.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+        Shape("Rope", PrimitiveType.Cube, new Vector3(0f, 1.2f, 0f), new Vector3(0.015f, 0.5f, 0.015f), "Paper", well);
+        Piece("Bucket", PrimitiveType.Cylinder, new Vector3(0f, 0.92f, 0f), new Vector3(0.25f, 0.12f, 0.25f), "ArrivalArt/CoachMetal", well);
+        Piece("Crank", PrimitiveType.Cube, new Vector3(0.66f, 1.45f, 0.08f), new Vector3(0.03f, 0.03f, 0.18f), "FarmProps/Iron", well);
+    }
+
+    // Where the big animals graze (the left part of the yard, the lawn) and what they walk around.
+    public static Vector2 PastureMin => new Vector2(-7.2f, -1f);
+    public static Vector2 PastureMax => new Vector2(8.2f, 11.2f);
+    public static readonly Rect[] PastureObstacles = { new Rect(4.3f, 7.9f, 1.8f, 1.8f) }; // the well
+    public static Vector3 BarnDoorOutside => new Vector3(0f, 0f, 10.9f);
+    public static Vector3 BarnDoorInside => new Vector3(0f, 0f, 14f);
+    public static Vector3 CowStall(int i) => new Vector3(-4.6f, 0f, 15.5f + i * 3f);
+    public static Vector3 GoatPen(int i) => new Vector3(4.7f, 0f, 14.8f + i * 2f);
+    public static readonly string[] CowNames = { "Зірка", "Ласка" };
+    public static readonly string[] GoatNames = { "Мілка", "Белла", "Сніжка" };
+
+    // ---------- the barn's big doors (they swing open in FarmPrototype.Barn.cs) ----------
+
+    static void BarnDoors()
+    {
+        Vector3 barn = new Vector3(0f, 0f, 17f);
+        Transform doors = Group("Barn Doors", world, barn);
+        BoxCollider hit = doors.gameObject.AddComponent<BoxCollider>(); // also keeps you out while they're shut
+        hit.center = new Vector3(0f, 2.1f, -4.6f);
+        hit.size = new Vector3(4.5f, 4.3f, 0.3f);
+        FarmInteractable action = doors.gameObject.AddComponent<FarmInteractable>();
+        action.kind = FarmInteractable.Kind.Barn;
+        action.label = "оглянути стару стодолу";
+        foreach (float side in new[] { -1f, 1f })
+        {
+            Transform hinge = Group(side < 0 ? "Left Door" : "Right Door", doors, new Vector3(side * 2.25f, 0f, -4.55f));
+            float mid = -side * 1.1f;
+            Shape("Door", PrimitiveType.Cube, new Vector3(mid, 2.1f, 0f), new Vector3(2.2f, 4.2f, 0.1f), "DarkWood", hinge);
+            foreach (float tilt in new[] { 27f, -27f })
+            {
+                GameObject cross = Shape("Trim", PrimitiveType.Cube, new Vector3(mid, 2.1f, -0.06f), new Vector3(0.12f, 4.6f, 0.05f), "Paint", hinge);
+                cross.transform.localRotation = Quaternion.Euler(0f, 0f, tilt);
+            }
+            Shape("Trim", PrimitiveType.Cube, new Vector3(mid * 2f + side * 0.06f, 2.15f, -0.06f), new Vector3(0.06f, 4.3f, 0.06f), "Paint", hinge);
+        }
+        Transform padlock = Group("Lock", doors, new Vector3(0f, 1.6f, -4.67f));
+        Piece("Chain", PrimitiveType.Cube, new Vector3(0f, 0f, 0f), new Vector3(0.9f, 0.04f, 0.03f), "FarmProps/Iron", padlock);
+        Piece("Padlock", PrimitiveType.Cube, new Vector3(0f, -0.08f, -0.02f), new Vector3(0.13f, 0.15f, 0.06f), "FarmProps/Iron", padlock);
+        Piece("Shackle", PrimitiveType.Cube, new Vector3(0f, 0.01f, -0.02f), new Vector3(0.09f, 0.06f, 0.02f), "ArrivalArt/Brass", padlock);
+        Transform ring = GlowRing(doors, 1.2f, 0.03f);
+        ring.localPosition = new Vector3(0f, 0.03f, -5.8f);
+    }
+
+    // ---------- cows and goats (hidden until you buy them; they live in the barn) ----------
+
+    static void Animals()
+    {
+        for (int i = 0; i < CowNames.Length; i++) Cow(i);
+        for (int i = 0; i < GoatNames.Length; i++) SheGoat(i);
+    }
+
+    static Transform Animal(string objectName, string animalName, Vector3 at, float radius, float height)
+    {
+        Transform animal = Group(objectName, world, at);
+        animal.gameObject.layer = PlayerBody.WalkThroughLayer;
+        SphereCollider hit = animal.gameObject.AddComponent<SphereCollider>();
+        hit.center = new Vector3(0f, height, -0.1f);
+        hit.radius = radius;
+        FarmInteractable action = animal.gameObject.AddComponent<FarmInteractable>();
+        action.kind = FarmInteractable.Kind.Animal;
+        action.label = "погладити";
+        action.itemId = animalName;
+        return animal;
+    }
+
+    static void Grazing(Transform animal, Transform head, float speed)
+    {
+        Grazer grazer = animal.gameObject.AddComponent<Grazer>();
+        grazer.head = head;
+        grazer.areaMin = PastureMin;
+        grazer.areaMax = PastureMax;
+        grazer.avoid = PastureObstacles;
+        grazer.speed = speed;
+        animal.gameObject.SetActive(false);
+    }
+
+    // A black-and-white cow, about 1.4 m at the shoulder.
+    static void Cow(int i)
+    {
+        Transform cow = Animal("Cow " + i, CowNames[i], BarnDoorInside, 0.75f, 1.0f);
+        Transform body = Group("Body", cow, Vector3.zero);
+        Prop(body, "CowBody", "FarmProps/CowCoat", Vector3.zero, Vector3.zero, 1f);
+        Transform head = Group("Head", body, new Vector3(0f, 1.26f, -1.04f));
+        Prop(head, "CowHead", "FarmProps/CowCoat", Vector3.zero, Vector3.zero, 1f);
+        Prop(head, "CowHorns", "CountryArt/HornKeratin", Vector3.zero, Vector3.zero, 1f);
+        Shape("Nose", PrimitiveType.Sphere, new Vector3(0f, -0.2f, -0.49f), new Vector3(0.2f, 0.12f, 0.08f), "Nose", head);
+        foreach (float side in new[] { -1f, 1f })
+            Shape("Eye", PrimitiveType.Sphere, new Vector3(side * 0.125f, 0.02f, -0.14f), Vector3.one * 0.045f, "Eyes", head);
+        GoatGait gait = cow.gameObject.AddComponent<GoatGait>();
+        gait.body = body;
+        gait.stepsPerMeter = 5f;
+        gait.legs = new Transform[4];
+        Vector3[] hips = { new Vector3(-0.17f, 1f, -0.55f), new Vector3(0.17f, 1f, -0.55f), new Vector3(-0.17f, 1f, 0.58f), new Vector3(0.17f, 1f, 0.58f) };
+        for (int k = 0; k < 4; k++)
+        {
+            Transform leg = Group("Leg", cow, hips[k]);
+            Prop(leg, "CowLeg", "FarmProps/CowCoat", Vector3.zero, Vector3.zero, 1f);
+            Prop(leg, "CowHoof", "CountryArt/Hoof", new Vector3(0f, -1f, 0f), Vector3.zero, 1f);
+            gait.legs[k] = leg;
+        }
+        Grazing(cow, head, 0.3f);
+    }
+
+    // A white she-goat: Boris's model, a bit smaller, with small horns.
+    static void SheGoat(int i)
+    {
+        Transform goat = Animal("She-goat " + i, GoatNames[i], BarnDoorInside, 0.42f, 0.55f);
+        Transform body = Group("Body", goat, Vector3.zero);
+        body.localScale = Vector3.one * 0.9f;
+        Prop(body, "GoatBody", "FarmProps/GoatCoatWhite", Vector3.zero, Vector3.zero, 1f);
+        Transform head = Group("Head", body, new Vector3(0f, 0.84f, -0.42f));
+        Prop(head, "GoatHead", "FarmProps/GoatCoatWhite", Vector3.zero, Vector3.zero, 1f);
+        Prop(head, "GoatHorns", "CountryArt/HornKeratin", Vector3.zero, Vector3.zero, 0.55f);
+        foreach (float side in new[] { -1f, 1f })
+            Shape("Eye", PrimitiveType.Sphere, new Vector3(side * 0.056f, 0.012f, -0.075f), new Vector3(0.026f, 0.024f, 0.026f), "Eyes", head);
+        GoatGait gait = goat.gameObject.AddComponent<GoatGait>();
+        gait.body = body;
+        gait.legs = new Transform[4];
+        Vector3[] hips = { new Vector3(-0.07f, 0.5f, -0.22f), new Vector3(0.07f, 0.5f, -0.22f), new Vector3(-0.07f, 0.5f, 0.29f), new Vector3(0.07f, 0.5f, 0.29f) };
+        for (int k = 0; k < 4; k++)
+        {
+            Transform leg = Group("Leg", goat, hips[k]);
+            leg.localScale = Vector3.one * 0.9f;
+            Prop(leg, k < 2 ? "GoatFrontLeg" : "GoatHindLeg", "FarmProps/GoatLegs", Vector3.zero, Vector3.zero, 1f);
+            Prop(leg, "GoatHoof", "CountryArt/Hoof", new Vector3(0f, -0.545f, 0f), Vector3.zero, 1f);
+            gait.legs[k] = leg;
+        }
+        Grazing(goat, head, 0.32f);
+    }
+
+    // What the barn key looks like (in the inventory and when it turns in the lock).
+    static void KeyLook()
+    {
+        Transform key = Group("Barn Key Look", world, Vector3.zero);
+        Transform model = Model(key, Quaternion.identity);
+        GameObject bow = Piece("Key Ring", PrimitiveType.Cylinder, new Vector3(-0.07f, 0f, 0f), new Vector3(0.06f, 0.006f, 0.06f), "ArrivalArt/Brass", model);
+        bow.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        Piece("Key Shaft", PrimitiveType.Cube, new Vector3(0.02f, 0f, 0f), new Vector3(0.13f, 0.014f, 0.014f), "ArrivalArt/Brass", model);
+        Piece("Key Bit", PrimitiveType.Cube, new Vector3(0.07f, -0.016f, 0f), new Vector3(0.025f, 0.03f, 0.012f), "ArrivalArt/Brass", model);
+        key.gameObject.SetActive(false);
     }
 
     // ---------- helpers for textured pieces and models ----------

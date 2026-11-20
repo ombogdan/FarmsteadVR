@@ -21,19 +21,22 @@ public partial class FarmPrototype
     GameObject coopUpgrade;
 
     int HenLimit => coopUpgraded ? hens.Count : Mathf.Min(hens.Count, FarmWorldBuilder.HensBeforeUpgrade);
-    int NestsInUse => coopUpgraded ? nests.Length : FarmWorldBuilder.NestCount;
+    int NestsInUse => coopUpgraded ? FarmWorldBuilder.NestsUpgraded : FarmWorldBuilder.NestsBase;
+    int[] eggsToday;       // how many eggs each hen has laid today (a hen lays 2 a day, 3 when fed)
+    int DailyEggs => FedToday ? 3 : 2;
 
     void FindEggParts()
     {
         coopUpgrade = Find("Coop Upgrade");
-        nests = new Transform[FarmWorldBuilder.NestCount * 2]; // the first 4 below, 4 more on the upper shelf
+        nests = new Transform[FarmWorldBuilder.NestsUpgraded]; // 2 rows of 4 by the back wall, then 6 by the right wall
         for (int i = 0; i < nests.Length; i++)
-            nests[i] = (i < FarmWorldBuilder.NestCount ? repairedCoop.transform : coopUpgrade.transform).Find("Nest Spot " + i);
+            nests[i] = (i < FarmWorldBuilder.NestsBase ? repairedCoop.transform : coopUpgrade.transform).Find("Nest Spot " + i);
         nestEggs = new GameObject[nests.Length];
         eggTemplate = Find("Egg Template");
         itemLooks["egg"] = eggTemplate;
         foreach (GameObject hen in hens) henGrazers.Add(hen.GetComponent<Grazer>());
         henNextLay = new float[hens.Count];
+        eggsToday = new int[hens.Count];
         for (int i = 0; i < henNextLay.Length; i++) henNextLay[i] = float.MaxValue; // not laying yet
     }
 
@@ -49,10 +52,11 @@ public partial class FarmPrototype
         SaveGame();
     }
 
-    // How long until a hen lays her next egg: fed hens (FarmPrototype.Chores.cs) lay twice as often.
+    // How long until a hen lays her next egg: about 2 minutes, about 1 minute when fed (FarmPrototype.Chores.cs).
+    // Together with the daily limit (DailyEggs) this keeps the farm from getting rich in five minutes.
     float LayInterval()
     {
-        return FedToday ? Random.Range(18f, 35f) : Random.Range(35f, 70f);
+        return FedToday ? Random.Range(55f, 85f) : Random.Range(100f, 160f);
     }
 
     void UpdateEggs()
@@ -65,16 +69,16 @@ public partial class FarmPrototype
         }
         for (int i = 0; i < hensBought; i++)
         {
-            if (Time.time < henNextLay[i]) continue;
+            if (Time.time < henNextLay[i] || eggsToday[i] >= DailyEggs) continue;
             henNextLay[i] = Time.time + LayInterval();
-            LayEgg(i);
+            if (LayEgg(i)) eggsToday[i]++;
         }
     }
 
-    void LayEgg(int henIndex)
+    bool LayEgg(int henIndex)
     {
         int nest = System.Array.IndexOf(nestEggs, null, 0, NestsInUse); // a free nest
-        if (nest < 0) return;                                          // all nests are full: collect the eggs!
+        if (nest < 0) return false;                                    // all nests are full: collect the eggs!
         SpawnEgg(nest);
         FarmAudio.Play("pop", nests[nest].position, 0.7f, 1.3f);
 
@@ -90,6 +94,7 @@ public partial class FarmPrototype
             SpeakerSays(hen.transform, name + ": Ко-ко-ко! Яйце!", 3f);
         }
         SaveGame();
+        return true;
     }
 
     void SpawnEgg(int nest)
@@ -147,6 +152,7 @@ public partial class FarmPrototype
             bird.SetSleeping(true);
         }
         goatGrazer.SetSleeping(true);
+        BarnOnEvening();
         Say("Вечоріє… Кури йдуть спати в курник. А тебе чекає ліжко в будинку діда Панаса.", 8f);
         SaveGame();
     }
@@ -161,8 +167,13 @@ public partial class FarmPrototype
             bird.SetSleeping(false);
         }
         goatGrazer.SetSleeping(false);
-        for (int i = 0; i < hensBought; i++) henNextLay[i] = Time.time + Random.Range(8f, 30f);
+        for (int i = 0; i < hensBought; i++)
+        {
+            henNextLay[i] = Time.time + Random.Range(20f, 60f);
+            eggsToday[i] = 0; // a new day
+        }
         ChoresOnMorning(); // the feeder is empty again
+        BarnOnMorning();
         StartCoroutine(MorningCrow());
         SaveGame();
     }

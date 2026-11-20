@@ -422,6 +422,18 @@ def crunch():
     return out
 
 
+def creak():
+    """Big old barn doors: a slow wooden creak that wobbles up and down, with a dry rub."""
+    dur = 1.9
+    def pitch(t):
+        return 170 + 90 * math.sin(TAU * 0.6 * t) + 40 * math.sin(TAU * 2.3 * t)
+    groan = tone(pitch, dur, ((1, 1.0), (2, 0.7), (3, 0.5), (4, 0.35), (5, 0.25), (7, 0.15)),
+                 lambda t: min(1.0, t / 0.1) * max(0.0, min(1.0, (dur - t) / 0.3)) * (0.6 + 0.4 * abs(math.sin(TAU * 7 * t))))
+    rub = bandpass(noise(dur, seed=131), 900, q=0.9)
+    rub = [r * 0.5 * (0.5 + 0.5 * math.sin(TAU * 11 * i / RATE)) for i, r in enumerate(rub)]
+    return mix_into(normalize(groan), normalize(rub), 0.0, 0.35)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     print("Writing sounds to", OUT)
@@ -456,6 +468,7 @@ def save_chore_sounds():
     save("water_pour", water_pour())
     save("grain_pour", grain_pour())
     save("crunch", crunch())
+    save("creak", creak())
 
 
 if __name__ == "__main__":

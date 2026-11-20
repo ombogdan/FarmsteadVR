@@ -8,7 +8,7 @@ public class GoatGait : MonoBehaviour
     public Transform body;   // bobs up and down a little with each step
     public Transform[] legs; // front left, front right, hind left, hind right; each swings at its top
 
-    const float StepsPerMeter = 9f; // ~0.7 m per full stride
+    public float stepsPerMeter = 9f; // ~0.7 m per full stride for a goat (a cow takes bigger steps)
     const float Swing = 24f;        // degrees forward/back
     Vector3 previous;
     float phase, weight;
@@ -25,7 +25,7 @@ public class GoatGait : MonoBehaviour
         moved.y = 0f;
         float distance = moved.magnitude;
         bool walking = distance > 0.0001f && distance < 0.2f; // a teleport-like jump is not a step
-        if (walking) phase += distance * StepsPerMeter;
+        if (walking) phase += distance * stepsPerMeter;
         weight = Mathf.MoveTowards(weight, walking ? 1f : 0f, Time.deltaTime * 5f);
 
         for (int i = 0; i < legs.Length; i++)

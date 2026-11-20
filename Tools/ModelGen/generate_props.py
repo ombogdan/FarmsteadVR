@@ -384,11 +384,10 @@ def goat():
     hoof.save()
 
 
-def goat_fur_png(size=256):
+def goat_fur_png(size=256, name="GoatFur.png", dark=(82, 56, 38), brown=(150, 102, 66), cream=(224, 208, 182)):
     """Goat coat colors around the body: a dark stripe along the back, brown sides, a cream belly.
     Across the picture = around the tube (the back is at 1/4, the belly at 3/4), down it = along the body."""
     rnd = random.Random(21)
-    dark, brown, cream = (82, 56, 38), (150, 102, 66), (224, 208, 182)
     streak = [rnd.uniform(0.9, 1.1) for _ in range(size)]
     rows = bytearray()
     for y in range(size):
@@ -402,7 +401,7 @@ def goat_fur_png(size=256):
             hair = streak[x] * (0.95 + 0.05 * math.sin(y * 0.9 + x * 0.3)) + rnd.uniform(-0.04, 0.04)
             for c in range(3):
                 rows.append(int(max(0, min(255, color[c] * hair))))
-    write_png("GoatFur.png", size, rows)
+    write_png(name, size, rows)
 
 
 # ---------- the lawn inside the fence ----------
@@ -423,6 +422,7 @@ LAWN_FREE_OF = [  # x from, x to, z from, z to (world, meters)
     (14.3, 15.2, 1.7, 2.7),     # the grain sack
     (12.8, 14.5, 13.9, 15.4),   # the water barrel and the watering can
     (-5.1, -3.9, 11.4, 12.5),   # the barrel by the barn
+    (4.3, 6.1, 7.9, 9.7),       # the well
 ]
 
 
@@ -503,6 +503,66 @@ def lawn(tufts=6500):
         m.save()
 
 
+# ---------- a cow (black and white), same idea as the goat but big ----------
+# About 1.4 m at the shoulder, 2.2 m long. Parts: body (+ neck, tail, udder), head, horns, a leg, a hoof.
+
+def cow():
+    body = Mesh("CowBody")
+    spine = catmull_rom([(0, 1.08, 0.86), (0, 1.1, 0.5), (0, 1.03, 0.0), (0, 1.07, -0.5), (0, 1.12, -0.78)], 6)
+    girth = lambda t: rounded(t, 0.34 + 0.07 * math.sin(math.pi * t), 0.14)
+    tube(body, spine, girth, 24, group=1, caps=False, wide=0.72)
+    neck = catmull_rom([(0, 1.1, -0.6), (0, 1.2, -0.85), (0, 1.25, -1.0), (0, 1.26, -1.04)], 4)
+    tube(body, neck, lambda t: lerp(0.21, 0.15, t), 18, group=2, wide=0.75)
+    tail = catmull_rom([(0, 1.2, 0.86), (0, 1.0, 0.98), (0, 0.6, 1.0), (0, 0.45, 0.99)], 5)
+    tube(body, tail, lambda t: 0.03 if t < 0.85 else 0.06 * math.sin(math.pi * (t - 0.85) / 0.15) + 0.02, 8, group=3)
+    lathe(body, [(0.0, 0.0), (0.0, 0.1), (0.07, 0.13), (0.16, 0.12), (0.2, 0.0)], 14, group=4, center=(0, 0.62, 0.42))  # udder
+    body.save()
+
+    head = Mesh("CowHead")
+    skull = catmull_rom([(0, 0.06, 0.08), (0, 0.05, -0.08), (0, -0.05, -0.25), (0, -0.16, -0.42), (0, -0.2, -0.48)], 5)
+    tube(head, skull, lambda t: rounded(t, 0.15 if t < 0.3 else lerp(0.15, 0.11, (t - 0.3) / 0.7), 0.16), 20, group=1, caps=False, wide=0.85)
+    for side in (-1, 1):
+        ear = catmull_rom([(side * 0.12, 0.07, 0.02), (side * 0.25, 0.06, 0.04), (side * 0.33, 0.03, 0.05)], 3)
+        tube(head, ear, lambda t: 0.012 + 0.05 * math.sin(math.pi * (0.1 + 0.85 * t)), 6, group=10 + side, flat=0.3)
+    head.save()
+
+    horns = Mesh("CowHorns")
+    for side in (-1, 1):
+        horn = catmull_rom([(side * 0.08, 0.12, 0.02), (side * 0.17, 0.16, 0.0), (side * 0.22, 0.22, -0.03)], 4)
+        tube(horns, horn, lambda t: lerp(0.03, 0.008, t), 10, group=side)
+    horns.save()
+
+    leg = Mesh("CowLeg")  # swings at its top; the hoof goes at y = -0.92
+    path = catmull_rom([(0, 0.1, 0), (0, -0.25, 0.01), (0, -0.48, -0.01), (0, -0.75, 0.0), (0, -0.92, 0.0)], 4)
+    tube(leg, path, lambda t: 0.11 - 0.06 * min(1, t * 1.5) + (0.01 if 0.45 < t < 0.55 else 0), 12, group=1, wide=0.85)
+    leg.save()
+    hoof = Mesh("CowHoof")
+    lathe(hoof, [(0.0, 0.0), (0.0, 0.058), (0.03, 0.056), (0.07, 0.046), (0.08, 0.0)], 12, group=1)
+    hoof.save()
+
+
+def cow_fur_png(size=256):
+    """White with big black patches (and a little pink-grey noise so it isn't flat)."""
+    rnd = random.Random(44)
+    blobs = [(rnd.uniform(0, 1), rnd.uniform(0, 1), rnd.uniform(0.07, 0.16)) for _ in range(14)]
+    rows = bytearray()
+    for y in range(size):
+        rows.append(0)
+        for x in range(size):
+            u, v = x / size, y / size
+            dark = 0.0
+            for bu, bv, r in blobs:
+                du = min(abs(u - bu), 1 - abs(u - bu))  # wraps around the body
+                d = math.hypot(du, (v - bv) * 0.8) + 0.015 * math.sin(u * 60 + v * 40)
+                dark = max(dark, min(1.0, max(0.0, (r - d) / 0.015)))
+            base = (238, 232, 222)
+            black = (34, 30, 30)
+            k = 0.94 + rnd.uniform(-0.04, 0.04)
+            for c in range(3):
+                rows.append(int(max(0, min(255, (base[c] + (black[c] - base[c]) * dark) * k))))
+    write_png("CowFur.png", size, rows)
+
+
 # ---------- the burlap texture ----------
 
 def burlap_png(size=256, cell=8):
@@ -556,9 +616,12 @@ def main():
     watering_can()
     grain_sack()
     goat()
+    cow()
     lawn()
     burlap_png()
     goat_fur_png()
+    goat_fur_png(name="GoatFurWhite.png", dark=(150, 140, 128), brown=(232, 226, 214), cream=(246, 242, 234))
+    cow_fur_png()
     print("Done.")
 
 

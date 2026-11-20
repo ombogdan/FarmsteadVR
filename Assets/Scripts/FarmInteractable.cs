@@ -7,7 +7,7 @@ public class FarmInteractable : MonoBehaviour
     {
         Goat, Fence, Item, Coop, Rooster, Hen, Egg, ShopItem, SellBasket, Cat, Sleep,
         GrainSack, Feeder, Horseshoe, Mound, Chest, Bed, House, // stage 5 (FarmPrototype.Chores.cs)
-        MenuRow,                                                 // a button in the shop menu (ShopMenu.cs)
+        Barn, Animal,                                            // the barn, cows and goats (FarmPrototype.Barn.cs)
     }
 
     public Kind kind;

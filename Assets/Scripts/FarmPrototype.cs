@@ -15,7 +15,7 @@ public partial class FarmPrototype : MonoBehaviour
 {
     // Bump this number whenever FarmWorldBuilder changes. The editor sees that the saved scene
     // has an older version and rebuilds the farm by itself (no manual "Rebuild Scene" needed).
-    public const int WorldVersion = 10;
+    public const int WorldVersion = 11;
     public const string WorldVersionMarker = "World Version ";
 
     enum Stage
@@ -26,6 +26,7 @@ public partial class FarmPrototype : MonoBehaviour
         MeetMarquis, Trading,                               // stage 4 (Trading: Boris wants a word)
         Horseshoes, BorisSecret, DigChest, OpenChest,       // stage 5
         Garden, RepairHouse, EpisodeDone,
+        OpenBarn, BarnOpen,                                 // the barn, cows and goats (FarmPrototype.Barn.cs)
         // New stages go only at the end: saved games remember the stage as a number.
     }
 
@@ -34,7 +35,8 @@ public partial class FarmPrototype : MonoBehaviour
         { "hammer", "Молоток" }, { "nails", "Цвяхи" }, { "saw", "Пилка" }, { "egg", "Яйця" },
         { "planks", "Дошки" }, { "paint", "Фарба" }, { "shovel", "Лопата" }, { "rake", "Граблі" },
         { "grain", "Зерно" }, { "horseshoe", "Підкова" }, { "seeds", "Насіння моркви" },
-        { "carrot", "Морква" }, { "can", "Лійка" },
+        { "carrot", "Морква" }, { "can", "Лійка" }, { "barn_key", "Ключ від стодоли" },
+        { "milk", "Молоко" }, { "goat_milk", "Козяче молоко" },
     };
 
     Transform world;
@@ -73,6 +75,10 @@ public partial class FarmPrototype : MonoBehaviour
     bool dialogueTaught;      // "(trigger — next)" is shown only in the very first conversation
 
     string questText = "";
+    // Little "transitions": a banner when a new task starts, "+N" when coins come in (shown by VrHud / OnGUI).
+    string bannerText = "", bannerTitle = "";
+    float bannerAt = -10f, coinDeltaAt = -10f;
+    int shownStage = -1, lastCoins = -1, coinDelta;
     int questKey = -1;
     float nextAutoSave;
 
@@ -80,6 +86,7 @@ public partial class FarmPrototype : MonoBehaviour
     [System.NonSerialized] public Transform aimSource;
     [System.NonSerialized] public float aimDistance = 4f;
     bool aimHasHit;
+    bool windowAim; // the laser is on the shop window
     Vector3 aimPoint;
     float aimHitDistance;
 
@@ -92,6 +99,7 @@ public partial class FarmPrototype : MonoBehaviour
         FindEggParts();
         FindShopParts();
         FindChoreParts();
+        FindBarnParts();
         dayNight = gameObject.AddComponent<DayNight>();
         dayNight.onMorning = OnMorning;
         dayNight.onEvening = OnEvening;
@@ -162,6 +170,7 @@ public partial class FarmPrototype : MonoBehaviour
     {
         HandlePanelButtons();
         RefreshQuestText();
+        WatchForNews();
         UpdateAim();
         if (stage == Stage.Intro) return;
 
@@ -172,7 +181,9 @@ public partial class FarmPrototype : MonoBehaviour
         }
         UpdateEggs();   // hens keep laying even while you talk
         UpdateGarden(); // and carrots keep growing
+        UpdateBarn();   // who can be milked
         RefreshChoreLabels();
+        UpdateSideTasks();
 
         // While somebody talks, the trigger (anywhere) shows the next sentence.
         if (InDialogue)
@@ -186,6 +197,41 @@ public partial class FarmPrototype : MonoBehaviour
 
         if (FarmInput.InteractPressed() && aimedAt != null)
             Interact(aimedAt);
+    }
+
+    // A new stage -> "НОВЕ ЗАВДАННЯ" floats up in front of you. More coins -> "+N" jumps off the coin badge.
+    void WatchForNews()
+    {
+        if (stage == Stage.Intro) return;
+        if ((int)stage != shownStage)
+        {
+            if (shownStage >= 0 && questText.Length > 0)
+            {
+                int end = questText.IndexOfAny(new[] { '.', '!', ':' });
+                bannerText = end > 20 && end < 110 ? questText.Substring(0, end + 1) : questText.Length > 110 ? questText.Substring(0, 110) + "…" : questText;
+                bannerTitle = "НОВЕ ЗАВДАННЯ";
+                bannerAt = Time.time;
+                FarmAudio.Play2D("pickup", 0.45f, 0.8f);
+            }
+            shownStage = (int)stage;
+        }
+        if (coins != lastCoins)
+        {
+            if (lastCoins >= 0 && coins > lastCoins)
+            {
+                coinDelta = coins - lastCoins;
+                coinDeltaAt = Time.time;
+            }
+            lastCoins = coins;
+        }
+    }
+
+    // A banner floating up in front of you for a few seconds ("НОВЕ ЗАВДАННЯ", "ВИКОНАНО! +5").
+    void ShowBanner(string title, string text)
+    {
+        bannerTitle = title;
+        bannerText = text;
+        bannerAt = Time.time;
     }
 
     // Short press of X/Tab: tasks. Y/I: inventory. Holding X/Tab for 4 seconds: a new game.
@@ -225,7 +271,22 @@ public partial class FarmPrototype : MonoBehaviour
     {
         aimedAt = null;
         aimHasHit = false;
+        windowAim = false;
         Transform source = aimSource != null ? aimSource : (playerCamera != null ? playerCamera.transform : null);
+        if (source != null && shopWindow != null && shopWindow.IsOpen)
+        {
+            // The shop window is open: the laser only talks to it, nothing behind it gets in the way.
+            windowAim = shopWindow.Aim(source.position, source.forward, out Vector3 onWindow);
+            if (windowAim)
+            {
+                aimHasHit = true;
+                aimPoint = onWindow;
+                aimHitDistance = Vector3.Distance(source.position, onWindow);
+            }
+            Highlight(lastAimed, false);
+            lastAimed = null;
+            return;
+        }
         RaycastHit hit;
         if (source != null && Physics.Raycast(source.position, source.forward, out hit, aimDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
         {
@@ -272,7 +333,6 @@ public partial class FarmPrototype : MonoBehaviour
             case FarmInteractable.Kind.Cat: TalkToMarquis(); break;
             case FarmInteractable.Kind.ShopItem: OpenShop(false); break; // the goods on the counter: the BUY menu
             case FarmInteractable.Kind.SellBasket: OpenShop(true); break; // the basket: the SELL menu
-            case FarmInteractable.Kind.MenuRow: PressMenu(item.itemId); break;
             case FarmInteractable.Kind.GrainSack: TakeGrain(); break;
             case FarmInteractable.Kind.Feeder: FillFeeder(); break;
             case FarmInteractable.Kind.Horseshoe: PickHorseshoe(item); break;
@@ -280,6 +340,8 @@ public partial class FarmPrototype : MonoBehaviour
             case FarmInteractable.Kind.Chest: OpenChest(); break;
             case FarmInteractable.Kind.Bed: UseBed(item); break;
             case FarmInteractable.Kind.House: UseHouse(); break;
+            case FarmInteractable.Kind.Barn: UseBarn(); break;
+            case FarmInteractable.Kind.Animal: TalkToAnimal(item); break;
         }
     }
 
@@ -417,6 +479,8 @@ public partial class FarmPrototype : MonoBehaviour
             nests = NestState(),
             fedDay = fedDay,
             coopUpgraded = coopUpgraded,
+            cowsBought = cowsBought,
+            goatsBought = goatsBought,
             horseshoes = horseshoesFound,
             beds = (int[])bedState.Clone(),
             bedGrowth = (float[])bedGrowth.Clone(),
@@ -424,6 +488,9 @@ public partial class FarmPrototype : MonoBehaviour
         save.itemIds = inventory.ToArray();
         save.itemCounts = new int[inventory.Count];
         for (int i = 0; i < inventory.Count; i++) save.itemCounts[i] = counts[inventory[i]];
+        SaveTasks(save);
+        save.cowMilked = (int[])cowMilkedDay.Clone();
+        save.goatMilked = (int[])goatMilkedDay.Clone();
         save.usedHints = new string[usedHints.Count];
         usedHints.CopyTo(save.usedHints);
         save.Store();
@@ -444,6 +511,8 @@ public partial class FarmPrototype : MonoBehaviour
         ApplyEggState(save);
         ApplyShopState();
         ApplyChoreState(save);
+        ApplyBarnState(save);
+        LoadTasks(save);
     }
 
     void OnApplicationPause(bool paused)
@@ -467,6 +536,7 @@ public partial class FarmPrototype : MonoBehaviour
         key = key * 31 + hensBought;
         key = key * 31 + (night ? 1 : 0);
         key = key * 31 + ChoreKey(); // inventory, horseshoes, feeding, the garden (FarmPrototype.Chores.cs)
+        key = key * 31 + tasksVersion; // side jobs (FarmPrototype.Tasks.cs)
         if (key == questKey) return;
         questKey = key;
         switch (stage)
@@ -488,6 +558,7 @@ public partial class FarmPrototype : MonoBehaviour
             default: questText = ChoreQuestText(); break; // stage 5 (FarmPrototype.Chores.cs)
         }
         if (stage >= Stage.MeetMarquis) questText += DailyChoreText();
+        questText += SideTasksText();
         if (dayNight != null && dayNight.running && night)
             questText += "\nЗараз ніч: можна поспати в ліжку в будинку діда Панаса.";
     }
@@ -495,6 +566,11 @@ public partial class FarmPrototype : MonoBehaviour
     // ---------- read by VrHud, VrHands and the Mac screen ----------
 
     public int Coins => coins;
+    public string BannerText => bannerText;
+    public string BannerTitle => bannerTitle;
+    public float BannerAge => Time.time - bannerAt;
+    public int CoinDelta => coinDelta;
+    public float CoinDeltaAge => Time.time - coinDeltaAt;
     public string Message => message;
     public bool MessageVisible => Time.time < messageUntil; // messages fade after a few seconds
     public Transform MessageSpeaker => messageSpeaker;
@@ -502,7 +578,7 @@ public partial class FarmPrototype : MonoBehaviour
     public bool InventoryOpen => inventoryOpen;
     public IReadOnlyList<string> Inventory => inventory;
     public int InventoryVersion => inventoryVersion;
-    public bool AimedAtSomething => aimedAt != null;
+    public bool AimedAtSomething => aimedAt != null || (windowAim && shopWindow.Hovering);
     public string AimedLabel => aimedAt != null && (aimedAt.alwaysHint || !usedHints.Contains(aimedAt.label)) ? aimedAt.label : null;
     public bool AimHasHit => aimHasHit;
     public Vector3 AimPoint => aimPoint;
@@ -550,10 +626,10 @@ public partial class FarmPrototype : MonoBehaviour
 
         if (taskPanelOpen)
         {
-            GUI.Box(new Rect(16, 16, 460, 290), "");
-            GUI.Label(new Rect(28, 24, 420, 30), "Завдання", title);
-            GUI.Label(new Rect(28, 58, 430, 180), questText, body);
-            GUI.Label(new Rect(28, 242, 430, 60), "WASD — рух • миша — погляд • E — дія • I — інвентар\nTab — закрити • затисни Tab на 4 с — нова гра", body);
+            GUI.Box(new Rect(16, 16, 480, 400), "");
+            GUI.Label(new Rect(28, 24, 440, 30), "Завдання", title);
+            GUI.Label(new Rect(28, 58, 450, 290), questText, body);
+            GUI.Label(new Rect(28, 352, 450, 60), "WASD — рух • миша — погляд • E — дія • I — інвентар\nTab — закрити • затисни Tab на 4 с — нова гра", body);
         }
         else if (inventoryOpen)
         {
@@ -565,6 +641,29 @@ public partial class FarmPrototype : MonoBehaviour
             GUI.Label(new Rect(28, 200, 270, 30), "I — закрити", body);
         }
         else GUI.Label(new Rect(20, 16, 400, 28), "Tab — завдання   •   I — інвентар", body);
+
+        // The "new task" banner (fades in and out at the top) and "+N" rising from the coins box.
+        if (BannerAge < 3.5f)
+        {
+            float a = Mathf.Clamp01(Mathf.Min(BannerAge / 0.3f, (3.5f - BannerAge) / 0.5f));
+            Color was = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, a);
+            float drop = (1f - a) * 30f;
+            Rect banner = new Rect(Screen.width / 2f - 300, 70 - drop, 600, 84);
+            GUI.Box(banner, "");
+            GUI.Box(banner, "");
+            GUI.Label(new Rect(banner.x, banner.y + 6, 600, 28), bannerTitle, new GUIStyle(prompt) { fontStyle = FontStyle.Bold, normal = { textColor = new Color(1f, 0.85f, 0.3f) } });
+            GUI.Label(new Rect(banner.x + 16, banner.y + 34, 568, 46), bannerText, new GUIStyle(body) { alignment = TextAnchor.UpperCenter });
+            GUI.color = was;
+        }
+        if (CoinDeltaAge < 1.4f)
+        {
+            float k = CoinDeltaAge / 1.4f;
+            Color was = GUI.color;
+            GUI.color = new Color(1f, 0.85f, 0.25f, 1f - k * k);
+            GUI.Label(new Rect(Screen.width - 230, 84 - k * 50, 200, 34), "+" + coinDelta, title);
+            GUI.color = was;
+        }
 
         if (MessageVisible)
         {
