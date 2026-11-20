@@ -1,0 +1,19 @@
+/Library/
+/Temp/
+/Obj/
+/Build/
+/Builds/
+/Logs/
+/UserSettings/
+/MemoryCaptures/
+/Recordings/
+# Android builds and their temporary files: big, and Unity makes them again on every build
+*.apk
+*.aab
+/build/
+/.utmp/
+*.csproj
+*.sln
+*.suo
+*.user
+.DS_Store
