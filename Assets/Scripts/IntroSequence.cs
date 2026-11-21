@@ -39,7 +39,7 @@ public class IntroSequence : MonoBehaviour
     Vector3 bookPosition, captionPosition;
     bool bookPlaced, captionPlaced;
 
-    public IEnumerator Run(FarmPrototype farm, Camera camera, string nextHint)
+    public IEnumerator Run(FarmPrototype farm, Camera camera, string nextHint, int startPage, System.Action<int> checkpoint)
     {
         this.farm = farm;
         head = camera.transform;
@@ -49,31 +49,35 @@ public class IntroSequence : MonoBehaviour
         yield return null; // one frame, so the VR player is ready to be moved
 
         // ---- 1. At home with the letter ----
-        BuildHome();
-        BuildBook();
-        farm.PlacePlayer(HomeSpot + new Vector3(0f, 0f, -0.6f), 0f);
-        yield return null;
-        yield return fade.FadeTo(0f, 0.8f);
-
-        for (int page = 0; page < Pages.Length; page++)
+        if (startPage < Pages.Length)
         {
-            FarmAudio.Play2D("page_turn", 0.8f);
-            FitText(pageTitle, PageHeadings[page], 0.40f, 0.062f);
-            FitText(pageText, TextPlate.Wrap(Pages[page], 24), 0.40f, 0.25f);
-            FitText(photoNote, PhotoNotes[page], 0.34f, 0.025f);
-            FitText(footer, $"{page + 1} / {Pages.Length}    •    {nextHint}", 0.55f, 0.029f);
-            float shownAt = Time.time;
-            while (true)
+            BuildHome();
+            BuildBook();
+            farm.PlacePlayer(HomeSpot + new Vector3(0f, 0f, -0.6f), 0f);
+            yield return null;
+            yield return fade.FadeTo(0f, 0.8f);
+
+            for (int page = startPage; page < Pages.Length; page++)
             {
-                float shown = Time.time - shownAt;
-                if (shown > 0.5f && (FarmInput.InteractPressed() || shown > 17f)) break;
-                yield return null;
+                FarmAudio.Play2D("page_turn", 0.8f);
+                FitText(pageTitle, PageHeadings[page], 0.40f, 0.062f);
+                FitText(pageText, TextPlate.Wrap(Pages[page], 24), 0.40f, 0.25f);
+                FitText(photoNote, PhotoNotes[page], 0.34f, 0.025f);
+                FitText(footer, $"{page + 1} / {Pages.Length}    •    {nextHint}", 0.55f, 0.029f);
+                float shownAt = Time.time;
+                while (true)
+                {
+                    float shown = Time.time - shownAt;
+                    if (shown > 0.5f && (FarmInput.InteractPressed() || shown > 17f)) break;
+                    yield return null;
+                }
+                checkpoint(page + 1);
             }
+            yield return fade.FadeTo(1f, 0.7f);
+            Destroy(home.gameObject);
+            Destroy(book.gameObject);
+            book = null;
         }
-        yield return fade.FadeTo(1f, 0.7f);
-        Destroy(home.gameObject);
-        Destroy(book.gameObject);
-        book = null;
 
         // ---- 2. On the bus ----
         BuildRide();

@@ -54,6 +54,7 @@ public static partial class FarmWorldBuilder
         Sun();
         GroundAndPaths();
         RoadAndBusStop();
+        RoutePost();
         Bus();
         Forest();
         Fence();
@@ -110,6 +111,35 @@ public static partial class FarmWorldBuilder
         Shape("Bench", PrimitiveType.Cube, new Vector3(0f, 0.45f, 0.35f), new Vector3(2.4f, 0.08f, 0.45f), "Wood", stop, true);
         Shape("Sign Pole", PrimitiveType.Cube, new Vector3(-2.2f, 1.3f, -0.5f), new Vector3(0.08f, 2.6f, 0.08f), "Metal", stop, true);
         Shape("Bus Sign", PrimitiveType.Cube, new Vector3(-2.2f, 2.45f, -0.5f), new Vector3(0.5f, 0.5f, 0.05f), "Bus", stop);
+    }
+
+    static void RoutePost()
+    {
+        Transform box = Group("Route 21 Post", world, new Vector3(3f, 0f, -10.5f));
+        box.localRotation = Quaternion.Euler(0f, 80f, 0f); // toward the path to the farm
+        Shape("Post", PrimitiveType.Cube, new Vector3(0f, 0.55f, 0f), new Vector3(0.12f, 1.1f, 0.12f), "Wood", box, true);
+        Shape("Mailbox", PrimitiveType.Cube, new Vector3(0f, 1.28f, 0f), new Vector3(0.66f, 0.53f, 0.29f), "Night", box, true);
+        Shape("Enamel Plate", PrimitiveType.Cube, new Vector3(0f, 1.22f, -0.15f), new Vector3(0.53f, 0.17f, 0.02f), "Paper", box);
+        SignText(box, "ПОШТА  •  21", new Vector3(0f, 1.22f, -0.17f), 0.011f);
+        Shape("Slot", PrimitiveType.Cube, new Vector3(0f, 1.46f, -0.15f), new Vector3(0.34f, 0.03f, 0.02f), "Eyes", box);
+        GameObject note = Shape("Letter", PrimitiveType.Cube, new Vector3(0f, 1.50f, -0.17f), new Vector3(0.27f, 0.12f, 0.013f), "Paper", box);
+        note.transform.localRotation = Quaternion.Euler(-24f, 0f, 7f);
+        note.SetActive(false);
+        Transform basket = Group("Lunch Basket", box, new Vector3(0.49f, 0.16f, -0.14f));
+        Shape("Wicker", PrimitiveType.Cube, Vector3.zero, new Vector3(0.40f, 0.30f, 0.29f), "Straw", basket, true);
+        Shape("Folded Towel", PrimitiveType.Cube, Vector3.up * 0.15f, new Vector3(0.42f, 0.04f, 0.32f), "Paper", basket);
+        for (int i = -1; i <= 1; i++)
+            Shape("Woven Stripe", PrimitiveType.Cube, new Vector3(0.12f + i * 0.025f, 0.174f, 0f), new Vector3(0.009f, 0.004f, 0.32f), "Barn", basket);
+        basket.gameObject.SetActive(false);
+        Transform ribbon = Group("Rosette", box, new Vector3(0.23f, 1.43f, -0.17f));
+        Shape("Blue Ribbon", PrimitiveType.Cube, new Vector3(-0.018f, -0.025f, 0f), new Vector3(0.035f, 0.15f, 0.012f), "Night", ribbon).transform.localRotation = Quaternion.Euler(0, 0, -14);
+        Shape("Yellow Ribbon", PrimitiveType.Cube, new Vector3(0.018f, -0.025f, 0f), new Vector3(0.035f, 0.15f, 0.012f), "Yellow", ribbon).transform.localRotation = Quaternion.Euler(0, 0, 14);
+        Shape("Knot", PrimitiveType.Sphere, Vector3.up * 0.045f, new Vector3(0.075f, 0.07f, 0.045f), "Yellow", ribbon);
+        ribbon.gameObject.SetActive(false);
+        FarmInteractable post = box.gameObject.AddComponent<FarmInteractable>();
+        post.kind = FarmInteractable.Kind.RoutePost;
+        post.label = "оглянути пошту рейсу 21";
+        post.alwaysHint = true;
     }
 
     // The bus you arrived on. It drives away after the intro (FarmPrototype moves it).
@@ -296,10 +326,16 @@ public static partial class FarmWorldBuilder
         foreach (float z in new[] { -3.2f, -1.2f, 0.8f, 2.8f })
             Shape("Pen Wall", PrimitiveType.Cube, new Vector3(4.7f, 0.5f, z), new Vector3(2.4f, 1f, 0.08f), "Wood", barn, true);
         foreach (float side in new[] { -1f, 1f })
-        {
             Shape("Feed Trough", PrimitiveType.Cube, new Vector3(side * 5.6f, 0.35f, 0f), new Vector3(0.4f, 0.3f, 7.6f), "Wood", barn);
-            Shape("Trough Hay", PrimitiveType.Cube, new Vector3(side * 5.6f, 0.52f, 0f), new Vector3(0.32f, 0.06f, 7.4f), "Straw", barn);
-        }
+        // The left trough is where you put hay (its hay shows how much is left: FarmPrototype.Barn.cs).
+        Transform trough = Group("Hay Trough", world, position + new Vector3(-5.6f, 0f, 0f));
+        BoxCollider troughHit = trough.gameObject.AddComponent<BoxCollider>();
+        troughHit.center = new Vector3(0f, 0.45f, 0f);
+        troughHit.size = new Vector3(0.7f, 0.5f, 7.6f);
+        FarmInteractable fill = trough.gameObject.AddComponent<FarmInteractable>();
+        fill.kind = FarmInteractable.Kind.Trough;
+        fill.label = "покласти сіна в ясла";
+        Shape("Trough Hay", PrimitiveType.Cube, new Vector3(0f, 0.52f, 0f), new Vector3(0.32f, 0.06f, 7.4f), "Straw", trough);
         for (int i = 0; i < 6; i++)
             Shape("Hay Bale", PrimitiveType.Cube, new Vector3(-1.4f + (i % 3) * 1.25f, 0.27f + (i / 3) * 0.52f, 3.6f), new Vector3(1.2f, 0.5f, 0.6f), "Straw", barn, i < 3);
         Shape("Hayloft", PrimitiveType.Cube, new Vector3(0f, 3.6f, 2.9f), new Vector3(width - 0.5f, 0.15f, 2.8f), "Wood", barn);
@@ -485,6 +521,17 @@ public static partial class FarmWorldBuilder
         Shape("Front Wall", PrimitiveType.Cube, new Vector3(-(doorway + sidePiece) / 2f, height / 2f, -depth / 2f + wall / 2f), new Vector3(sidePiece, height, wall), "FreshWood", fresh, true);
         Shape("Front Wall", PrimitiveType.Cube, new Vector3((doorway + sidePiece) / 2f, height / 2f, -depth / 2f + wall / 2f), new Vector3(sidePiece, height, wall), "FreshWood", fresh, true);
         Shape("Above Door", PrimitiveType.Cube, new Vector3(0f, height - 0.25f, -depth / 2f + wall / 2f), new Vector3(doorway, 0.5f, wall), "FreshWood", fresh, true);
+        // The door: open by day, shut it at night (a fox comes around!). FarmPrototype.Events.cs opens/closes it.
+        Transform hinge = Group("Coop Door", world, position + new Vector3(-doorway / 2f, 0f, -depth / 2f - 0.03f));
+        FarmInteractable door = hinge.gameObject.AddComponent<FarmInteractable>();
+        door.kind = FarmInteractable.Kind.CoopDoor;
+        door.label = "зачинити курник";
+        GameObject panel = Shape("Door Panel", PrimitiveType.Cube, new Vector3(doorway / 2f, 1.04f, 0f), new Vector3(doorway - 0.04f, 2.06f, 0.05f), "FreshWood", hinge, true);
+        Shape("Door Cross", PrimitiveType.Cube, new Vector3(doorway / 2f, 1.04f, -0.03f), new Vector3(0.08f, 2.3f, 0.02f), "Paint", hinge).transform.localRotation = Quaternion.Euler(0f, 0f, 27f);
+        Piece("Latch", PrimitiveType.Cube, new Vector3(doorway - 0.1f, 1.05f, -0.04f), new Vector3(0.12f, 0.05f, 0.03f), "FarmProps/Iron", hinge);
+        panel.layer = 0;
+        hinge.localRotation = Quaternion.Euler(0f, 100f, 0f); // open (swung outwards) by day
+        hinge.gameObject.SetActive(false); // appears with the repaired coop
         GableRoof(fresh, width, height, depth, 35f, "ToolboxRed", "FreshWood", hollow: true);
         Shape("Straw Floor", PrimitiveType.Cube, new Vector3(0f, 0.03f, 0f), new Vector3(width - 0.2f, 0.06f, depth - 0.2f), "Straw", fresh);
         // Two rows of 4 nests along the whole back wall (eggs appear at "Nest Spot 0..7").
@@ -795,11 +842,13 @@ public static partial class FarmWorldBuilder
     public static readonly Rect[] ChickenObstacles =
     {
         new Rect(9.2f, 3.6f, 4.6f, 4.8f),    // the coop
-        new Rect(12.9f, 2.3f, 1.4f, 0.6f),   // the feeder
+        new Rect(12.9f, 2.3f, 2.6f, 0.6f),   // the feeder (and its extension)
         new Rect(14.35f, 1.8f, 0.8f, 0.8f),  // the grain sack
         new Rect(8.4f, 10.3f, 5.2f, 2.6f),   // the garden beds
         new Rect(14.3f, 10.1f, 1.4f, 1.4f),  // the mound / chest
         new Rect(4.3f, 7.9f, 1.8f, 1.8f),    // the well
+        new Rect(-7.7f, 8.2f, 4.6f, 2.8f),   // the storage shed and its hay
+        new Rect(-7.8f, 3.1f, 3.1f, 2.8f),   // the cheese house
     };
 
     // A walk from anywhere in the yard to the front of the coop that goes around it, never

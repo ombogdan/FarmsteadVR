@@ -423,6 +423,9 @@ LAWN_FREE_OF = [  # x from, x to, z from, z to (world, meters)
     (12.8, 14.5, 13.9, 15.4),   # the water barrel and the watering can
     (-5.1, -3.9, 11.4, 12.5),   # the barrel by the barn
     (4.3, 6.1, 7.9, 9.7),       # the well
+    (-7.8, -3.0, 8.2, 11.1),    # the storage shed and its hay bales
+    (-7.9, -4.6, 3.0, 6.0),     # the cheese house (built later)
+    (14.3, 15.2, 1.7, 2.7),     # (old sack spot, kept free)
 ]
 
 

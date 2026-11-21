@@ -26,23 +26,34 @@ public partial class FarmPrototype
     // All kinds of jobs: what to count, how many (min..max), coins for each one done.
     static readonly string[] TaskIds =
         { "eggs", "sell_eggs", "feed", "pet_hens", "talk_boris", "carrots", "sell_carrots", "boris_carrot",
-          "milk_cow", "milk_goat", "sell_milk", "pet_animals", "buy_animal", "sleep" };
+          "milk_cow", "milk_goat", "sell_milk", "pet_animals", "buy_animal", "sleep", "fun", "race", "race_win", "water", "hay", "gallery", "catch_hen", "make_cheese", "close_coop", "open_coop", "egg_rush", "cook" };
 
     bool TaskAvailable(string id)
     {
         switch (id)
         {
-            case "eggs": case "pet_hens": return hensBought > 0;
+            case "eggs": case "pet_hens": return AliveHens > 0;
             case "sell_eggs": return stage >= Stage.Trading;
-            case "feed": return hensBought > 0 && !FedToday && !dayNight.IsNight;
+            case "feed": return AliveHens > 0 && feederKg < FeederCapacity / 2f;
             case "talk_boris": return stage >= Stage.Trading;
             case "carrots": case "sell_carrots": return stage >= Stage.Garden;
             case "boris_carrot": return stage > Stage.Garden;
             case "milk_cow": return cowsBought > 0;
             case "milk_goat": return goatsBought > 0;
             case "sell_milk": case "pet_animals": return cowsBought + goatsBought > 0;
-            case "buy_animal": return stage >= Stage.Trading && (hensBought < HenLimit || (stage >= Stage.BarnOpen && goatsBought < goats.Count));
+            case "buy_animal": return stage >= Stage.Trading && (AliveHens < HenLimit || (stage >= Stage.BarnOpen && goatsBought < goats.Count));
             case "sleep": return dayNight.running;
+            case "fun": return stage >= Stage.Trading && AliveHens > 0 && !dayNight.IsNight;
+            case "race": case "race_win": return stage >= Stage.Trading && !dayNight.IsNight;
+            case "water": return stage >= Stage.Garden && Has("can");
+            case "gallery": return stage >= Stage.Trading && !dayNight.IsNight;
+            case "catch_hen": return runaway >= 0;
+            case "cook": return kitchenBuilt;
+            case "egg_rush": return stage >= Stage.Trading && AliveHens > 0 && !dayNight.IsNight;
+            case "close_coop": return AliveHens > 0 && coopDoorOpen && dayNight.running && dayNight.time01 > 0.62f;
+            case "open_coop": return AliveHens > 0 && !coopDoorOpen && dayNight.running && !dayNight.IsNight;
+            case "make_cheese": return cheeseBuilt && (cheeseBatch != 0 || ItemCount("milk") >= 2 || ItemCount("goat_milk") >= 2);
+            case "hay": return cowsBought + goatsBought > 0 && barnHayKg < HayTroughCapacity / 2f;
             default: return false;
         }
     }
@@ -65,6 +76,18 @@ public partial class FarmPrototype
             case "boris_carrot": min = 1; max = 1; coinsEach = 5; return;
             case "buy_animal": min = 1; max = 1; coinsEach = 8; return;
             case "sleep": min = 1; max = 1; coinsEach = 3; return;
+            case "fun": min = 1; max = 1; coinsEach = 4; return;
+            case "race": min = 1; max = 1; coinsEach = 3; return;
+            case "race_win": min = 1; max = 1; coinsEach = 8; return;
+            case "water": min = 2; max = 4; coinsEach = 1; return;
+            case "hay": min = 1; max = 1; coinsEach = 4; return;
+            case "gallery": min = 1; max = 1; coinsEach = 4; return;
+            case "catch_hen": min = 1; max = 1; coinsEach = 3; return;
+            case "cook": min = 1; max = 1; coinsEach = 6; return;
+            case "egg_rush": min = 1; max = 1; coinsEach = 4; return;
+            case "close_coop": min = 1; max = 1; coinsEach = 2; return;
+            case "open_coop": min = 1; max = 1; coinsEach = 2; return;
+            case "make_cheese": min = 1; max = 1; coinsEach = 5; return;
             default: min = 1; max = 1; coinsEach = 2; return; // talk_boris
         }
     }
@@ -75,7 +98,7 @@ public partial class FarmPrototype
         {
             case "eggs": return "Збери " + Plural(n, "яйце", "яйця", "яєць") + " у курнику";
             case "sell_eggs": return "Продай Маркізу " + Plural(n, "яйце", "яйця", "яєць");
-            case "feed": return "Нагодуй курочок";
+            case "feed": return "Досип зерна в годівницю";
             case "pet_hens": return "Погладь курочок (" + n + " рази)";
             case "talk_boris": return "Поговори з Борисом";
             case "carrots": return "Збери на грядках " + Plural(n, "морквину", "морквини", "морквин");
@@ -87,6 +110,18 @@ public partial class FarmPrototype
             case "pet_animals": return "Погладь корів чи кізочок (" + n + " рази)";
             case "buy_animal": return "Купи нову тварину в Маркіза";
             case "sleep": return "Виспися вдома до ранку";
+            case "fun": return "Зіграй у «Курячий політ» (рогатка біля дороги)";
+            case "race": return "Візьми участь у «Перегонах» (старт на дорозі)";
+            case "race_win": return "Виграй «Перегони» з Борисом";
+            case "water": return "Полий " + Plural(n, "грядку", "грядки", "грядок");
+            case "hay": return "Поклади сіна в ясла в стодолі";
+            case "gallery": return "Зіграй у «Тир Маркіза» (біля дороги)";
+            case "catch_hen": return "Впіймай курку-втікачку";
+            case "cook": return "Приготуй страву на кухні в хаті";
+            case "egg_rush": return "Зіграй у «Яєчний переполох» (вивіска біля курника)";
+            case "close_coop": return "Зачини курник на ніч (лис!)";
+            case "open_coop": return "Відчини курник, щоб курочки погуляли";
+            case "make_cheese": return "Звари сир на сироварні";
             default: return id;
         }
     }
@@ -154,7 +189,7 @@ public partial class FarmPrototype
         if (sideTasks.Count == 1 && !usedHints.Contains("#tasks"))
         {
             usedHints.Add("#tasks");
-            Say("З'явилися побічні справи! Вони приносять монети. Дивись у завданнях (" + (FarmInput.HeadsetActive ? "X" : "Tab") + ").", 8f);
+            Say("З'явилися побічні справи! Вони приносять монети. Дивись у завданнях (" + (FarmInput.HeadsetActive ? "B" : "J") + ").", 8f);
         }
     }
 

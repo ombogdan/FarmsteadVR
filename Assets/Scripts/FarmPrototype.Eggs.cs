@@ -23,7 +23,7 @@ public partial class FarmPrototype
     int HenLimit => coopUpgraded ? hens.Count : Mathf.Min(hens.Count, FarmWorldBuilder.HensBeforeUpgrade);
     int NestsInUse => coopUpgraded ? FarmWorldBuilder.NestsUpgraded : FarmWorldBuilder.NestsBase;
     int[] eggsToday;       // how many eggs each hen has laid today (a hen lays 2 a day, 3 when fed)
-    int DailyEggs => FedToday ? 3 : 2;
+    int DailyEggs => 2;
 
     void FindEggParts()
     {
@@ -34,6 +34,7 @@ public partial class FarmPrototype
         nestEggs = new GameObject[nests.Length];
         eggTemplate = Find("Egg Template");
         itemLooks["egg"] = eggTemplate;
+        itemLooks["golden_egg"] = eggTemplate;
         foreach (GameObject hen in hens) henGrazers.Add(hen.GetComponent<Grazer>());
         henNextLay = new float[hens.Count];
         eggsToday = new int[hens.Count];
@@ -52,16 +53,17 @@ public partial class FarmPrototype
         SaveGame();
     }
 
-    // How long until a hen lays her next egg: about 2 minutes, about 1 minute when fed (FarmPrototype.Chores.cs).
-    // Together with the daily limit (DailyEggs) this keeps the farm from getting rich in five minutes.
+    // How long until a hen lays her next egg: about every 1.5-2 minutes, at most 2 a day, and only when
+    // there's grain in the feeder (FarmPrototype.Chores.cs). Keeps the farm from getting rich in five minutes.
     float LayInterval()
     {
-        return FedToday ? Random.Range(55f, 85f) : Random.Range(100f, 160f);
+        return Random.Range(80f, 130f);
     }
 
     void UpdateEggs()
     {
         if (stage < Stage.WaitEggs || !dayNight.running || dayNight.IsNight || hensBought == 0) return;
+        if (hungryDays > 0 && firstEggLaid) return; // hungry hens don't lay
         if (!firstEggLaid)
         {
             if (Time.time >= firstEggAt) LayEgg(0);
@@ -69,9 +71,9 @@ public partial class FarmPrototype
         }
         for (int i = 0; i < hensBought; i++)
         {
-            if (Time.time < henNextLay[i] || eggsToday[i] >= DailyEggs) continue;
+            if (henGone[i] || Time.time < henNextLay[i] || eggsToday[i] >= DailyEggs) continue;
             henNextLay[i] = Time.time + LayInterval();
-            if (LayEgg(i)) eggsToday[i]++;
+            LayEgg(i);
         }
     }
 
@@ -79,8 +81,15 @@ public partial class FarmPrototype
     {
         int nest = System.Array.IndexOf(nestEggs, null, 0, NestsInUse); // a free nest
         if (nest < 0) return false;                                    // all nests are full: collect the eggs!
-        SpawnEgg(nest);
+        bool golden = firstEggLaid && stage >= Stage.Trading && Random.value < 0.06f; // rare: a golden egg!
+        SpawnEgg(nest, golden);
+        eggsToday[henIndex]++;
         FarmAudio.Play("pop", nests[nest].position, 0.7f, 1.3f);
+        if (golden)
+        {
+            FarmAudio.Play("success", nests[nest].position, 0.8f, 1.3f, 6f);
+            Say("Ко-ко-КО! У курнику з'явилося ЗОЛОТЕ яйце! Маркіз дасть за нього " + SellPrice("golden_egg") + " монет.", 7f);
+        }
 
         GameObject hen = hens[henIndex];
         string name = hen.GetComponent<FarmInteractable>().itemId;
@@ -97,10 +106,17 @@ public partial class FarmPrototype
         return true;
     }
 
-    void SpawnEgg(int nest)
+    void SpawnEgg(int nest, bool golden = false)
     {
         GameObject egg = Instantiate(eggTemplate, world);
-        egg.name = "Egg";
+        egg.name = golden ? "Golden Egg" : "Egg";
+        if (golden)
+        {
+            egg.GetComponent<FarmInteractable>().itemId = "golden_egg";
+            egg.GetComponent<FarmInteractable>().label = "взяти золоте яйце";
+            Material shine = VrShapes.LoadMaterial("SunDisc");
+            foreach (Renderer r in egg.transform.Find("Model").GetComponentsInChildren<Renderer>()) r.sharedMaterial = shine;
+        }
         egg.transform.position = nests[nest].position;
         egg.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
         egg.SetActive(true);
@@ -117,17 +133,21 @@ public partial class FarmPrototype
         if (ring != null) ring.gameObject.SetActive(false);
         Destroy(egg); // no longer something to take...
         StartCoroutine(FlyToHand(egg.transform, 0.45f)); // ...it flies into your hand
-        AddItem("egg");
+        bool golden = egg.itemId == "golden_egg";
+        AddItem(golden ? "golden_egg" : "egg");
+        TaskEvent("egg");
+        if (golden) FarmAudio.Play2D("coin", 0.8f, 1.3f);
 
         if (stage == Stage.WaitEggs) MarquisArrives(); // -> stage 4 (FarmPrototype.Shop.cs)
-        else Say("Яйце в інвентарі (" + ItemCount("egg") + ").", 3f);
+        else Say(golden ? "Золоте яйце в рюкзаку!" : "Яйце в інвентарі (" + ItemCount("egg") + ").", 3f);
         SaveGame();
     }
 
-    bool[] NestState()
+    bool[] NestState(bool goldenOnly = false)
     {
         bool[] state = new bool[nests.Length];
-        for (int i = 0; i < nests.Length; i++) state[i] = nestEggs[i] != null;
+        for (int i = 0; i < nests.Length; i++) state[i] = nestEggs[i] != null &&
+            (!goldenOnly || nestEggs[i].GetComponent<FarmInteractable>().itemId == "golden_egg");
         return state;
     }
 
@@ -137,12 +157,13 @@ public partial class FarmPrototype
     IEnumerable<Grazer> ActiveBirds()
     {
         if (zhora.activeSelf) yield return zhoraGrazer;
-        for (int i = 0; i < hensBought && i < henGrazers.Count; i++) yield return henGrazers[i];
+        for (int i = 0; i < hensBought && i < henGrazers.Count; i++) if (!henGone[i]) yield return henGrazers[i];
     }
 
     void OnEvening()
     {
         if (stage < Stage.WaitEggs) return;
+        RunawayOnEvening(); // a runaway hen comes home first (FarmPrototype.Events.cs)
         int spot = 0;
         foreach (Grazer bird in ActiveBirds())
         {
@@ -153,7 +174,7 @@ public partial class FarmPrototype
         }
         goatGrazer.SetSleeping(true);
         BarnOnEvening();
-        Say("Вечоріє… Кури йдуть спати в курник. А тебе чекає ліжко в будинку діда Панаса.", 8f);
+        Say("Вечоріє… Кури йдуть спати в курник. Зачини його на ніч — буває лис! А тебе чекає ліжко в будинку діда Панаса.", 8f);
         SaveGame();
     }
 
@@ -162,9 +183,10 @@ public partial class FarmPrototype
         if (stage < Stage.WaitEggs) return;
         foreach (Grazer bird in ActiveBirds())
         {
+            bird.SetSleeping(false);
+            if (!coopDoorOpen) continue; // the door is shut: they wait inside until you open it
             Vector3 outside = FarmWorldBuilder.CoopDoorOutside + new Vector3(Random.Range(-1.5f, 1.5f), 0f, -Random.Range(0f, 1f));
             bird.GoVia(FarmWorldBuilder.CoopDoorInside, outside);
-            bird.SetSleeping(false);
         }
         goatGrazer.SetSleeping(false);
         for (int i = 0; i < hensBought; i++)
@@ -181,7 +203,7 @@ public partial class FarmPrototype
     // Every morning Zhora jumps onto the coop roof and crows for the whole farm to hear.
     IEnumerator MorningCrow()
     {
-        string morning = "Ранок! День " + dayNight.day + ". Курочки голодні — насип зерна в годівницю.";
+        string morning = "Ранок! День " + dayNight.day + "." + morningNote + TakeFoxNews() + (coopDoorOpen ? "" : " Відчини курник, щоб курочки вийшли гуляти!");
         if (!zhora.activeSelf)
         {
             Say(morning, 6f);
@@ -229,7 +251,9 @@ public partial class FarmPrototype
         yield return fade.FadeTo(1f, 1f);
         int spot = 0;
         foreach (Grazer bird in ActiveBirds()) bird.PlaceAt(FarmWorldBuilder.SleepSpot(spot++)); // everyone is in bed
+        FoxVisit(true); // the night passes: the fox still comes by
         dayNight.SkipToMorning();
+        TaskEvent("sleep");
         yield return new WaitForSeconds(0.6f);
         FarmInput.MovementLocked = false;
         yield return fade.FadeTo(0f, 1f);
@@ -237,9 +261,25 @@ public partial class FarmPrototype
 
     // ---------- loading a saved game ----------
 
+    // Bought from Marquis: a second trough appears next to the feeder (20 kg in all).
+    IEnumerator UpgradeFeeder()
+    {
+        feederUpgraded = true; // ownership is saved with the purchase, before the animation yields
+        StartCoroutine(HammerKnocks(FarmWorldBuilder.FeederPosition + new Vector3(1.2f, 0.4f, 0f), 3, 0.2f));
+        yield return new WaitForSeconds(0.6f);
+        Transform extension = feeder.transform.Find("Feeder Extension");
+        extension.gameObject.SetActive(true);
+        StartCoroutine(Puff(extension.position + Vector3.up * 0.2f, 0.5f));
+        FarmAudio.Play("success", extension.position + Vector3.up, 0.9f);
+        ShowFeederGrain();
+        Say("Велика годівниця готова: тепер вміщує " + FeederCapacity + " кг зерна!", 6f);
+        SaveGame();
+    }
+
     // Bought from Marquis: hammers knock, the upper shelf with 4 nests, a ladder and a window pop in.
     IEnumerator UpgradeCoop()
     {
+        coopUpgraded = true; // ownership is saved with the purchase, before the animation yields
         repairing = true;
         Say("Стук-стук! Курник розширюється…", 4f);
         StartCoroutine(HammerKnocks(FarmWorldBuilder.CoopDoorOutside + Vector3.up * 1.6f, 4, 0.2f));
@@ -248,7 +288,6 @@ public partial class FarmPrototype
             FarmAudio.Play(k % 2 == 0 ? "knock_1" : "knock_2", FarmWorldBuilder.CoopPosition + Vector3.up * 1.5f, 1f, Random.Range(0.95f, 1.05f));
             yield return new WaitForSeconds(0.2f);
         }
-        coopUpgraded = true;
         yield return PopIn(coopUpgrade, 0.08f);
         FarmAudio.Play("success", FarmWorldBuilder.CoopPosition + Vector3.up * 1.5f, 1f);
         repairing = false;
@@ -263,10 +302,15 @@ public partial class FarmPrototype
     {
         coopUpgrade.SetActive(coopUpgraded);
         for (int i = 0; i < NestsInUse && i < save.nests.Length; i++)
-            if (save.nests[i]) SpawnEgg(i);
+            if (save.nests[i]) SpawnEgg(i, save.goldenNests != null && i < save.goldenNests.Length && save.goldenNests[i]);
         firstEggLaid = stage > Stage.WaitEggs || ItemCount("egg") > 0 || System.Array.Exists(nestEggs, egg => egg != null);
-        firstEggAt = Time.time + 12f;
-        for (int i = 0; i < hensBought; i++) henNextLay[i] = Time.time + Random.Range(10f, 40f);
+        firstEggAt = Time.time + (save.laySeconds == null ? 12f : save.firstEggSeconds);
+        for (int i = 0; i < hensBought; i++)
+        {
+            float delay = save.laySeconds != null && i < save.laySeconds.Length ? save.laySeconds[i] : Random.Range(10f, 40f);
+            henNextLay[i] = Time.time + delay;
+            if (save.dailyEggs != null && i < save.dailyEggs.Length) eggsToday[i] = save.dailyEggs[i];
+        }
         if (dayNight.running && dayNight.IsNight)
         {
             int spot = 0;

@@ -107,7 +107,7 @@ public class ShopWindow : MonoBehaviour
             row.icon = Icon(e.look, new Vector2(-0.355f, y));
             if (selling) AddButton("усі", new Vector2(-0.045f, y), new Vector2(0.06f, 0.045f), "all:" + e.id, false);
         }
-        if (goods.Count == 0) Label(selling ? "Нічого продати.\nНеси яйця й моркву!" : "Порожньо", new Vector2(-0.2f, 0.05f), 0.0026f, null, Dim);
+        if (goods.Count == 0) Label(selling ? "Нічого продати.\nНеси яйця, моркву, молоко!" : "Порожньо", new Vector2(-0.2f, 0.05f), 0.0026f, null, Dim);
         if (pages > 1)
         {
             AddButton("<", new Vector2(-0.33f, -0.205f), new Vector2(0.06f, 0.045f), page > 0 ? "page:-1" : null, page == 0);
@@ -128,6 +128,18 @@ public class ShopWindow : MonoBehaviour
         AddButton(confirm, new Vector2(0.33f, -0.27f), new Vector2(0.15f, 0.05f), canConfirm ? "confirm" : null, !canConfirm, "FarmMaterials/Leaves");
         AddButton("Закрити", new Vector2(-0.31f, -0.27f), new Vector2(0.15f, 0.05f), "close", false);
         hovered = null;
+    }
+
+    public void ShowTitleMenu(bool confirm, bool canContinue, string saveDescription)
+    {
+        Clear();
+        Board("Back", Vector3.zero, new Vector2(Width, Height), "CountryArt/Timber", 0.012f);
+        Board("Letter Panel", Vector3.back * 0.004f, new Vector2(0.79f, 0.53f), "FarmMaterials/Eyes", 0.006f);
+        Label(confirm ? "Почати спочатку?" : "Ферма «Сидорівка»", new Vector2(0f, 0.19f), 0.005f, null, Hot);
+        Label(confirm ? "Нова гра замінить твій збережений прогрес." : saveDescription, new Vector2(0f, 0.08f), 0.003f, null, Normal);
+        AddButton(confirm ? "Назад" : "Продовжити", new Vector2(0f, -0.065f), new Vector2(0.42f, 0.073f),
+            confirm ? "back" : canContinue ? "continue" : null, !confirm && !canContinue, "Leaves");
+        AddButton(confirm ? "Замінити й почати" : "Нова гра", new Vector2(0f, -0.18f), new Vector2(0.42f, 0.073f), confirm ? "replace" : "new", false, "DarkWood");
     }
 
     // Called every frame by FarmPrototype with the laser (or the camera on the Mac).

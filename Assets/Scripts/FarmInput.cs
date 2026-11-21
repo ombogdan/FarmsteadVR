@@ -11,7 +11,8 @@ public static class FarmInput
     static InputAction move;       // WASD / arrows / left stick
     static InputAction interact;   // E / right trigger / right grip / A button
     static InputAction rightStick; // VR only: sideways = turn, forward = teleport
-    static InputAction menu;       // Tab / X or ☰ on the left controller: open or close the task panel
+    static InputAction menu;       // Tab / X or ☰ on the left controller: save and open the main menu
+    static InputAction tasks;      // J / B on the right controller
     static InputAction inventory;  // I / Y on the left controller: open or close the inventory
 
     // True during the intro: walking, turning and teleport do nothing (looking around still works).
@@ -66,24 +67,16 @@ public static class FarmInput
         return interact.WasReleasedThisFrame();
     }
 
-    // The task-panel button (Tab / X): pressed this frame, held down, released this frame.
-    // A short press opens the panel; holding it for a few seconds starts a new game.
     public static bool MenuPressed()
     {
         Setup();
         return menu.WasPressedThisFrame();
     }
 
-    public static bool MenuHeld()
+    public static bool TasksPressed()
     {
         Setup();
-        return menu.IsPressed();
-    }
-
-    public static bool MenuReleased()
-    {
-        Setup();
-        return menu.WasReleasedThisFrame();
+        return tasks.WasPressedThisFrame();
     }
 
     // True only on the frame the inventory button was pressed.
@@ -128,6 +121,10 @@ public static class FarmInput
         menu.AddBinding("<XRController>{LeftHand}/{PrimaryButton}");   // X
         menu.AddBinding("<XRController>{LeftHand}/{MenuButton}");      // ☰
 
+        tasks = new InputAction("Tasks", InputActionType.Button);
+        tasks.AddBinding("<Keyboard>/j");
+        tasks.AddBinding("<XRController>{RightHand}/{SecondaryButton}"); // B
+
         inventory = new InputAction("Inventory", InputActionType.Button);
         inventory.AddBinding("<Keyboard>/i");
         inventory.AddBinding("<XRController>{LeftHand}/{SecondaryButton}"); // Y
@@ -136,6 +133,7 @@ public static class FarmInput
         interact.Enable();
         rightStick.Enable();
         menu.Enable();
+        tasks.Enable();
         inventory.Enable();
     }
 
@@ -147,6 +145,7 @@ public static class FarmInput
         interact = null;
         rightStick = null;
         menu = null;
+        tasks = null;
         inventory = null;
         MovementLocked = false;
         headsetCheckedFrame = -1;

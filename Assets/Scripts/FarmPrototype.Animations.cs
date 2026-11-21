@@ -212,6 +212,44 @@ public partial class FarmPrototype
         foreach (Transform bit in bits) Destroy(bit.gameObject);
     }
 
+    // Little red hearts float up and fade (when you pet an animal).
+    void Hearts(Vector3 at)
+    {
+        StartCoroutine(HeartsRoutine(at));
+    }
+
+    IEnumerator HeartsRoutine(Vector3 at)
+    {
+        var hearts = new List<Transform>();
+        for (int i = 0; i < 4; i++)
+        {
+            Transform heart = new GameObject("Heart").transform;
+            foreach (float side in new[] { -1f, 1f }) // two balls and a point make a heart
+            {
+                Transform lobe = VrShapes.Create(PrimitiveType.Sphere, "Lobe", heart, "ToolboxRed").transform;
+                lobe.localPosition = new Vector3(side * 0.025f, 0.02f, 0f);
+                lobe.localScale = Vector3.one * 0.055f;
+            }
+            Transform tip = VrShapes.Create(PrimitiveType.Cube, "Tip", heart, "ToolboxRed").transform;
+            tip.localPosition = new Vector3(0f, -0.005f, 0f);
+            tip.localRotation = Quaternion.Euler(0f, 0f, 45f);
+            tip.localScale = Vector3.one * 0.045f;
+            heart.position = at + new Vector3(Random.Range(-0.2f, 0.2f), Random.Range(0f, 0.15f), Random.Range(-0.2f, 0.2f));
+            hearts.Add(heart);
+        }
+        for (float t = 0f; t < 1.4f; t += Time.deltaTime)
+        {
+            for (int i = 0; i < hearts.Count; i++)
+            {
+                hearts[i].position += Vector3.up * Time.deltaTime * (0.35f + i * 0.05f);
+                hearts[i].rotation = Quaternion.LookRotation(hearts[i].position - playerCamera.transform.position);
+                hearts[i].localScale = Vector3.one * Mathf.Sin(Mathf.Clamp01(t / 1.4f) * Mathf.PI) * 1.2f;
+            }
+            yield return null;
+        }
+        foreach (Transform heart in hearts) Destroy(heart.gameObject);
+    }
+
     // ---------- things flying into your hand ----------
 
     Vector3 HandPosition()

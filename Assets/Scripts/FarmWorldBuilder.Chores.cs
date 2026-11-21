@@ -25,7 +25,6 @@ public static partial class FarmWorldBuilder
     public static Vector3 HousePosition => new Vector3(11f, 0f, 18.5f);
     static Vector3 DoorHinge => new Vector3(-0.6f, 0f, -2.95f); // the house's door hangs here (house space)
     public static Vector3 FeederPosition => CoopPosition + new Vector3(2.1f, 0f, -3.4f);
-    public static Vector3 GrainSackPosition => CoopPosition + new Vector3(3.25f, 0f, -3.8f); // next to the feeder
     public static Vector3 MoundPosition => new Vector3(15f, 0f, 10.8f);
     public static Vector3 CanPosition => new Vector3(13.25f, 0f, 14.4f);
     public const int BedCount = 4;
@@ -53,7 +52,14 @@ public static partial class FarmWorldBuilder
         BarnDoors();
         Animals();
         KeyLook();
-        GrainSack();
+        ChickenFlight();
+        RaceTrack();
+        ShootingGallery();
+        FairFlags();
+        CheeseHouse();
+        EggRushSign();
+        Kitchen();
+        StorageShed();
         Feeder();
         Horseshoes();
         MoundAndChest();
@@ -76,20 +82,61 @@ public static partial class FarmWorldBuilder
 
     // ---------- feeding the hens ----------
 
-    static void GrainSack()
+    // The storage shed by the barn: grandpa's grain sacks inside (one sack shows per 20 kg left),
+    // a sign "СКЛАД" (point at it to buy animal food). Grain goes from here to the feeder by the coop.
+    public static Vector3 StoragePosition => new Vector3(-6f, 0f, 9.6f);
+
+    static void StorageShed()
     {
-        Transform sack = Group("Grain Sack", world, GrainSackPosition);
-        BoxCollider hit = sack.gameObject.AddComponent<BoxCollider>();
-        hit.center = new Vector3(0f, 0.3f, 0f);
-        hit.size = new Vector3(0.55f, 0.6f, 0.55f);
-        FarmInteractable action = sack.gameObject.AddComponent<FarmInteractable>();
-        action.kind = FarmInteractable.Kind.GrainSack;
-        action.label = "набрати зерна";
-        Transform model = Model(sack, Quaternion.identity);
-        Prop(model, "GrainSack", "FarmProps/Burlap", Vector3.zero, new Vector3(0f, 20f, 0f), 1f);
-        GameObject spill = Piece("Spilled Grain", PrimitiveType.Sphere, new Vector3(-0.3f, 0.01f, -0.22f), new Vector3(0.3f, 0.03f, 0.22f), "FarmProps/Grain", sack);
-        spill.transform.localRotation = Quaternion.Euler(0f, 30f, 0f);
-        GlowRing(sack, 0.42f, 0.02f);
+        Transform shed = Group("Storage Shed", statics, StoragePosition);
+        const float w = 3f, d = 2.4f, h = 2.4f;
+        Shape("Walls", PrimitiveType.Cube, new Vector3(0f, h / 2f, d / 2f - 0.06f), new Vector3(w, h, 0.12f), "Wood", shed, true);
+        foreach (float side in new[] { -1f, 1f })
+        {
+            Shape("Walls", PrimitiveType.Cube, new Vector3(side * (w / 2f - 0.06f), h / 2f, 0f), new Vector3(0.12f, h, d), "Wood", shed, true);
+            Shape("Walls", PrimitiveType.Cube, new Vector3(side * 1.2f, h / 2f, -d / 2f + 0.06f), new Vector3(0.6f, h, 0.12f), "Wood", shed, true);
+        }
+        Shape("Walls", PrimitiveType.Cube, new Vector3(0f, h - 0.2f, -d / 2f + 0.06f), new Vector3(1.8f, 0.4f, 0.12f), "Wood", shed, true);
+        GameObject roof = Shape("Roof", PrimitiveType.Cube, new Vector3(0f, h + 0.12f, 0f), new Vector3(w + 0.4f, 0.12f, d + 0.5f), "Roof", shed);
+        roof.transform.localRotation = Quaternion.Euler(-8f, 0f, 0f);
+        Shape("Floor", PrimitiveType.Cube, new Vector3(0f, 0.03f, 0f), new Vector3(w - 0.2f, 0.06f, d - 0.2f), "Wood", shed, true);
+        Shape("Sign Board", PrimitiveType.Cube, new Vector3(0f, h - 0.2f, -d / 2f - 0.03f), new Vector3(1.4f, 0.32f, 0.05f), "FreshWood", shed);
+        SignText(shed, "СКЛАД", new Vector3(0f, h - 0.2f, -d / 2f - 0.07f), 0.026f);
+
+        // The sacks you take grain from (FarmPrototype.Chores.cs shows one per 20 kg on stock).
+        Transform sacks = Group("Grain Sack", world, StoragePosition + new Vector3(0f, 0f, 0.3f));
+        BoxCollider hit = sacks.gameObject.AddComponent<BoxCollider>();
+        hit.center = new Vector3(0f, 0.45f, 0f);
+        hit.size = new Vector3(2.2f, 0.9f, 1f);
+        FarmInteractable take = sacks.gameObject.AddComponent<FarmInteractable>();
+        take.kind = FarmInteractable.Kind.GrainSack;
+        take.label = "набрати зерна";
+        Transform model = Model(sacks, Quaternion.identity);
+        Vector3[] spots = { new Vector3(-0.7f, 0f, 0.2f), new Vector3(0f, 0f, 0.25f), new Vector3(0.7f, 0f, 0.2f), new Vector3(-0.35f, 0f, -0.3f), new Vector3(0.35f, 0f, -0.3f) };
+        for (int i = 0; i < spots.Length; i++)
+            Prop(model, "GrainSack", "FarmProps/Burlap", spots[i], new Vector3(0f, 25f + i * 47f, 0f), 0.85f);
+        Transform ring = GlowRing(sacks, 0.8f, 0.02f);
+        ring.localPosition = new Vector3(0f, 0.08f, -0.75f);
+
+        // Hay bales by the shed's side (one bale shows per 10 kg); cows and goats eat hay.
+        Transform hay = Group("Hay Stack", world, StoragePosition + new Vector3(2.25f, 0f, 0.1f));
+        BoxCollider hayHit = hay.gameObject.AddComponent<BoxCollider>();
+        hayHit.center = new Vector3(0f, 0.5f, 0f);
+        hayHit.size = new Vector3(1f, 1f, 1.4f);
+        FarmInteractable takeHay = hay.gameObject.AddComponent<FarmInteractable>();
+        takeHay.kind = FarmInteractable.Kind.HayStack;
+        takeHay.label = "набрати сіна";
+        Transform bales = Model(hay, Quaternion.identity);
+        for (int i = 0; i < 4; i++)
+            Shape("Bale", PrimitiveType.Cube, new Vector3(0f, 0.23f + (i / 2) * 0.46f, -0.33f + (i % 2) * 0.66f), new Vector3(0.9f, 0.45f, 0.62f), "Straw", bales);
+
+        Transform sign = Group("Storage Sign", world, StoragePosition);
+        BoxCollider signHit = sign.gameObject.AddComponent<BoxCollider>();
+        signHit.center = new Vector3(0f, h - 0.2f, -d / 2f - 0.08f);
+        signHit.size = new Vector3(1.5f, 0.45f, 0.12f);
+        FarmInteractable buy = sign.gameObject.AddComponent<FarmInteractable>();
+        buy.kind = FarmInteractable.Kind.Storage;
+        buy.label = "склад: купити корм";
     }
 
     // A wooden trough in front of the coop. The grain in it shows up when you feed the hens.
@@ -113,6 +160,16 @@ public static partial class FarmWorldBuilder
         Piece("Feeder Grain", PrimitiveType.Cube, new Vector3(0f, 0.17f, 0f), new Vector3(1.06f, 0.05f, 0.26f), "FarmProps/Grain", feeder)
             .SetActive(false);
         GlowRing(feeder, 0.8f, 0.02f);
+
+        // The big feeder (Marquis sells it): a second trough right next to the first, 20 kg in all.
+        Transform extra = Group("Feeder Extension", feeder, new Vector3(1.2f, 0f, 0f));
+        Shape("Bottom", PrimitiveType.Cube, new Vector3(0f, 0.12f, 0f), new Vector3(1.1f, 0.04f, 0.3f), "FreshWood", extra);
+        foreach (float z in new[] { -0.15f, 0.15f })
+            Shape("Side", PrimitiveType.Cube, new Vector3(0f, 0.19f, z), new Vector3(1.1f, 0.14f, 0.03f), "FreshWood", extra);
+        Shape("End", PrimitiveType.Cube, new Vector3(0.56f, 0.17f, 0f), new Vector3(0.04f, 0.2f, 0.36f), "FreshWood", extra);
+        Shape("Leg", PrimitiveType.Cube, new Vector3(0.56f, 0.05f, 0f), new Vector3(0.06f, 0.1f, 0.3f), "FreshWood", extra);
+        Piece("Feeder Grain", PrimitiveType.Cube, new Vector3(0f, 0.17f, 0f), new Vector3(1.06f, 0.05f, 0.26f), "FarmProps/Grain", extra);
+        extra.gameObject.SetActive(false);
     }
 
     // ---------- grandpa Panas's lucky horseshoes ----------
@@ -389,18 +446,29 @@ public static partial class FarmWorldBuilder
         Shape("Rope", PrimitiveType.Cube, new Vector3(0f, 1.2f, 0f), new Vector3(0.015f, 0.5f, 0.015f), "Paper", well);
         Piece("Bucket", PrimitiveType.Cylinder, new Vector3(0f, 0.92f, 0f), new Vector3(0.25f, 0.12f, 0.25f), "ArrivalArt/CoachMetal", well);
         Piece("Crank", PrimitiveType.Cube, new Vector3(0.66f, 1.45f, 0.08f), new Vector3(0.03f, 0.03f, 0.18f), "FarmProps/Iron", well);
+
+        // Point at the well to fill the watering can.
+        Transform water = Group("Well Water", world, WellPosition);
+        BoxCollider hit = water.gameObject.AddComponent<BoxCollider>();
+        hit.center = new Vector3(0f, 0.55f, 0f);
+        hit.size = new Vector3(1.25f, 1.1f, 1.25f);
+        FarmInteractable action = water.gameObject.AddComponent<FarmInteractable>();
+        action.kind = FarmInteractable.Kind.Well;
+        action.label = "набрати води в лійку";
     }
 
     // Where the big animals graze (the left part of the yard, the lawn) and what they walk around.
     public static Vector2 PastureMin => new Vector2(-7.2f, -1f);
     public static Vector2 PastureMax => new Vector2(8.2f, 11.2f);
-    public static readonly Rect[] PastureObstacles = { new Rect(4.3f, 7.9f, 1.8f, 1.8f) }; // the well
+    public static readonly Rect[] PastureObstacles = { new Rect(4.3f, 7.9f, 1.8f, 1.8f), new Rect(-7.7f, 8.2f, 4.6f, 2.8f), new Rect(-7.8f, 3.1f, 3.1f, 2.8f) }; // the well, the storage shed and its hay, the cheese house
     public static Vector3 BarnDoorOutside => new Vector3(0f, 0f, 10.9f);
     public static Vector3 BarnDoorInside => new Vector3(0f, 0f, 14f);
-    public static Vector3 CowStall(int i) => new Vector3(-4.6f, 0f, 15.5f + i * 3f);
-    public static Vector3 GoatPen(int i) => new Vector3(4.7f, 0f, 14.8f + i * 2f);
-    public static readonly string[] CowNames = { "Зірка", "Ласка" };
-    public static readonly string[] GoatNames = { "Мілка", "Белла", "Сніжка" };
+    public static Vector3 CowStall(int i) => i < 2 ? new Vector3(-4.6f, 0f, 15.5f + i * 3f) : new Vector3(-4.6f, 0f, 13.4f);
+    public static Vector3 GoatPen(int i) => new Vector3(4.7f, 0f, 14f + i * 1.6f);
+    // The last cow and the last two goats only fit after the barn is made bigger (Marquis sells that).
+    public static readonly string[] CowNames = { "Зірка", "Ласка", "Ромашка" };
+    public static readonly string[] GoatNames = { "Мілка", "Белла", "Сніжка", "Кнопка", "Лялька" };
+    public const int CowsBeforeUpgrade = 2, GoatsBeforeUpgrade = 3;
 
     // ---------- the barn's big doors (they swing open in FarmPrototype.Barn.cs) ----------
 
@@ -453,6 +521,7 @@ public static partial class FarmWorldBuilder
         action.kind = FarmInteractable.Kind.Animal;
         action.label = "погладити";
         action.itemId = animalName;
+        GlowRing(animal, radius + 0.2f, 0.03f, 0.8f); // shines when the animal can be milked
         return animal;
     }
 
@@ -531,6 +600,287 @@ public static partial class FarmWorldBuilder
         Piece("Key Shaft", PrimitiveType.Cube, new Vector3(0.02f, 0f, 0f), new Vector3(0.13f, 0.014f, 0.014f), "ArrivalArt/Brass", model);
         Piece("Key Bit", PrimitiveType.Cube, new Vector3(0.07f, -0.016f, 0f), new Vector3(0.025f, 0.03f, 0.012f), "ArrivalArt/Brass", model);
         key.gameObject.SetActive(false);
+
+        MilkBottle("Milk Bottle Look", "ToolboxRed");  // cow's milk: a red cap
+        MilkBottle("Goat Milk Look", "Leaves");        // goat's milk: a green cap
+    }
+
+    // A glass bottle of milk (in the backpack, in the shop window, when you milk).
+    static void MilkBottle(string name, string capColor)
+    {
+        Transform bottle = Group(name, world, Vector3.zero);
+        Transform model = Model(bottle, Quaternion.identity);
+        Shape("Milk", PrimitiveType.Cylinder, new Vector3(0f, 0.08f, 0f), new Vector3(0.07f, 0.08f, 0.07f), "Paper", model);
+        Shape("Neck", PrimitiveType.Cylinder, new Vector3(0f, 0.18f, 0f), new Vector3(0.04f, 0.03f, 0.04f), "Paper", model);
+        Shape("Cap", PrimitiveType.Cylinder, new Vector3(0f, 0.215f, 0f), new Vector3(0.045f, 0.008f, 0.045f), capColor, model);
+        bottle.gameObject.SetActive(false);
+    }
+
+    // ---------- fun: "Курячий політ" - a big slingshot, hens in helmets, hay targets ----------
+    // In the field between the farm fence and the road, right of the gate. The game is in
+    // FarmPrototype.Slingshot.cs; the bands and the pouch move, so the slingshot is not "Static".
+
+    public static Vector3 SlingshotPosition => new Vector3(7.5f, 0f, -6.5f);
+    public static readonly Vector3[] TargetSpots = { new Vector3(12.5f, 0f, -5.4f), new Vector3(15f, 0f, -7.6f), new Vector3(17.6f, 0f, -5.2f) };
+
+    static void ChickenFlight()
+    {
+        Transform sling = Group("Slingshot", world, SlingshotPosition);
+        sling.localRotation = Quaternion.Euler(0f, 90f, 0f); // shoots along +x, towards the targets
+        BoxCollider hit = sling.gameObject.AddComponent<BoxCollider>();
+        hit.center = new Vector3(0f, 1f, 0f);
+        hit.size = new Vector3(1.4f, 2f, 0.6f);
+        FarmInteractable action = sling.gameObject.AddComponent<FarmInteractable>();
+        action.kind = FarmInteractable.Kind.Slingshot;
+        action.label = "«Курячий політ»: грати";
+        Shape("Trunk", PrimitiveType.Cylinder, new Vector3(0f, 0.55f, 0f), new Vector3(0.22f, 0.55f, 0.22f), "Wood", sling, true);
+        foreach (float side in new[] { -1f, 1f })
+        {
+            GameObject arm = Shape("Arm", PrimitiveType.Cylinder, new Vector3(side * 0.32f, 1.45f, 0f), new Vector3(0.16f, 0.45f, 0.16f), "Wood", sling);
+            arm.transform.localRotation = Quaternion.Euler(0f, 0f, -side * 28f);
+            Shape("Band", PrimitiveType.Cube, new Vector3(side * 0.3f, 1.75f, -0.2f), new Vector3(0.03f, 0.03f, 0.4f), "Eyes", sling).name = side < 0 ? "Band L" : "Band R";
+            Group(side < 0 ? "Tip L" : "Tip R", sling, new Vector3(side * 0.53f, 1.82f, 0f));
+        }
+        Transform pouch = Group("Pouch", sling, new Vector3(0f, 1.72f, -0.35f));
+        Shape("Leather", PrimitiveType.Cube, Vector3.zero, new Vector3(0.3f, 0.08f, 0.22f), "DarkWood", pouch);
+        GlowRing(sling, 1f, 0.03f, 1f).gameObject.SetActive(true);
+
+        Transform sign = Group("Flight Sign", statics, SlingshotPosition + new Vector3(-0.6f, 0f, 1.4f));
+        Shape("Post", PrimitiveType.Cube, new Vector3(0f, 0.9f, 0f), new Vector3(0.1f, 1.8f, 0.1f), "Wood", sign, true);
+        Shape("Board", PrimitiveType.Cube, new Vector3(0f, 1.75f, -0.06f), new Vector3(1.5f, 0.45f, 0.05f), "FreshWood", sign);
+        SignText(sign, "КУРЯЧИЙ ПОЛІТ", new Vector3(0f, 1.75f, -0.1f), 0.022f);
+
+        string[] points = { "5", "3", "2", "1" };
+        foreach (Vector3 spot in TargetSpots)
+        {
+            Transform target = Group("Hay Target", statics, spot);
+            Shape("Hay", PrimitiveType.Cylinder, new Vector3(0f, 0.08f, 0f), new Vector3(2.8f, 0.08f, 2.8f), "Straw", target, true);
+            Shape("Ring", PrimitiveType.Cylinder, new Vector3(0f, 0.17f, 0f), new Vector3(2f, 0.01f, 2f), "ToolboxRed", target);
+            Shape("Ring", PrimitiveType.Cylinder, new Vector3(0f, 0.18f, 0f), new Vector3(1.3f, 0.01f, 1.3f), "Paint", target);
+            Shape("Bullseye", PrimitiveType.Cylinder, new Vector3(0f, 0.19f, 0f), new Vector3(0.7f, 0.01f, 0.7f), "ToolboxRed", target);
+            Shape("Flag Pole", PrimitiveType.Cube, new Vector3(1.5f, 0.6f, 0f), new Vector3(0.05f, 1.2f, 0.05f), "Wood", target);
+            Shape("Flag", PrimitiveType.Cube, new Vector3(1.5f, 1.1f, -0.15f), new Vector3(0.03f, 0.22f, 0.3f), "Yellow", target);
+        }
+    }
+
+    // ---------- fun: "Перегони" on the road (the bus is gone): Boris vs Zhora vs Marquis ----------
+    // You don't ride (that would make you dizzy in VR): you stand on a little wooden stand by the
+    // road and spur Boris on. The game is in FarmPrototype.Race.cs.
+
+    public const float RaceStartX = 8f, RaceFinishX = 31f;
+    public static readonly float[] RaceLanes = { -14.4f, -16f, -17.6f }; // Boris, Zhora, Marquis
+    public static Vector3 RaceStandSpot => new Vector3(19.5f, 0f, -11.4f);
+
+    static void RaceTrack()
+    {
+        Transform track = Group("Race Track", statics, Vector3.zero);
+        RaceArch(track, RaceStartX, "СТАРТ", false);
+        RaceArch(track, RaceFinishX, "ФІНІШ", true);
+        foreach (float z in new[] { -15.2f, -16.8f })
+            Shape("Lane Line", PrimitiveType.Cube, new Vector3((RaceStartX + RaceFinishX) / 2f, 0.05f, z), new Vector3(RaceFinishX - RaceStartX, 0.01f, 0.08f), "Paint", track);
+        // the stand: a small wooden platform with a railing, facing the road
+        Transform stand = Group("Race Stand", track, RaceStandSpot);
+        Shape("Platform", PrimitiveType.Cube, new Vector3(0f, 0.1f, 0f), new Vector3(2.2f, 0.2f, 1.4f), "Wood", stand);
+        Shape("Rail", PrimitiveType.Cube, new Vector3(0f, 1f, -0.68f), new Vector3(2.2f, 0.08f, 0.08f), "Wood", stand);
+        foreach (float x in new[] { -1.05f, 1.05f })
+            Shape("Rail Post", PrimitiveType.Cube, new Vector3(x, 0.55f, -0.68f), new Vector3(0.08f, 1f, 0.08f), "Wood", stand);
+
+        // Point at this to start a race.
+        Transform sign = Group("Race Sign", world, new Vector3(RaceStartX - 1.2f, 0f, -11.6f));
+        BoxCollider hit = sign.gameObject.AddComponent<BoxCollider>();
+        hit.center = new Vector3(0f, 1.3f, 0f);
+        hit.size = new Vector3(1.6f, 1.2f, 0.3f);
+        FarmInteractable action = sign.gameObject.AddComponent<FarmInteractable>();
+        action.kind = FarmInteractable.Kind.Race;
+        action.label = "«Перегони»: почати";
+        Shape("Post", PrimitiveType.Cube, new Vector3(0f, 0.9f, 0f), new Vector3(0.1f, 1.8f, 0.1f), "Wood", sign);
+        Shape("Board", PrimitiveType.Cube, new Vector3(0f, 1.5f, -0.06f), new Vector3(1.5f, 0.5f, 0.05f), "FreshWood", sign);
+        SignText(sign, "ПЕРЕГОНИ", new Vector3(0f, 1.55f, -0.1f), 0.024f);
+        SignText(sign, "Борис • Жора • Маркіз", new Vector3(0f, 1.38f, -0.1f), 0.012f);
+        GlowRing(sign, 0.8f, 0.03f, 1f).gameObject.SetActive(true);
+    }
+
+    // An arch across the road: two posts and a banner (the finish one is chequered).
+    static void RaceArch(Transform parent, float x, string word, bool chequered)
+    {
+        Transform arch = Group(word + " Arch", parent, new Vector3(x, 0f, -16f));
+        foreach (float z in new[] { -3.9f, 3.9f })
+            Shape("Arch Post", PrimitiveType.Cube, new Vector3(0f, 1.7f, z), new Vector3(0.18f, 3.4f, 0.18f), "Wood", arch, true);
+        Shape("Banner", PrimitiveType.Cube, new Vector3(0f, 3.2f, 0f), new Vector3(0.06f, 0.6f, 7.6f), "FreshWood", arch);
+        if (chequered)
+            for (int i = 0; i < 16; i++)
+                Shape("Check", PrimitiveType.Cube, new Vector3(-0.035f, 3.05f + (i % 2) * 0.3f, -3.6f + (i / 2) * 1.03f + (i % 2) * 0.5f), new Vector3(0.01f, 0.28f, 0.5f), (i / 2) % 2 == 0 ? "Eyes" : "Paint", arch);
+        // The word faces the race stand (which is between the two arches).
+        float side = chequered ? -1f : 1f;
+        SignText(arch, word, new Vector3(side * 0.06f, 3.2f, 0f), 0.05f);
+        arch.GetChild(arch.childCount - 1).localRotation = Quaternion.Euler(0f, -90f * side, 0f);
+    }
+
+    // ---------- fun: "Тир Маркіза" - knock down cans and wooden ducks with pebbles ----------
+    // A booth with a striped awning in the field by the road, right of the bus stop. You stand at the
+    // counter (facing the road); cans stand on a shelf, ducks slide on a rail above them.
+    // The game (and the cans and ducks themselves) are in FarmPrototype.Gallery.cs.
+
+    public static Vector3 GalleryPosition => new Vector3(11.5f, 0f, -9.8f);
+    public const float GalleryShelfY = 1.06f, GalleryShelfZ = -11.6f, GalleryRailY = 1.55f;
+
+    static void ShootingGallery()
+    {
+        Transform booth = Group("Shooting Gallery", statics, GalleryPosition);
+        Shape("Counter", PrimitiveType.Cube, new Vector3(0f, 0.5f, 1.15f), new Vector3(3.2f, 1f, 0.5f), "Wood", booth, true);
+        Shape("Counter Top", PrimitiveType.Cube, new Vector3(0f, 1.02f, 1.1f), new Vector3(3.4f, 0.06f, 0.7f), "FreshWood", booth);
+        Shape("Back Board", PrimitiveType.Cube, new Vector3(0f, 1.3f, -2.05f), new Vector3(3.8f, 2.2f, 0.08f), "Barn", booth, true);
+        Shape("Shelf", PrimitiveType.Cube, new Vector3(0f, GalleryShelfY - 0.03f, GalleryShelfZ - GalleryPosition.z), new Vector3(3.4f, 0.06f, 0.35f), "Wood", booth);
+        Shape("Rail", PrimitiveType.Cube, new Vector3(0f, GalleryRailY - 0.12f, -1.95f), new Vector3(3.4f, 0.04f, 0.06f), "Metal", booth);
+        foreach (float x in new[] { -1.85f, 1.85f })
+            foreach (float z in new[] { -2.05f, 1.15f })
+                Shape("Post", PrimitiveType.Cube, new Vector3(x, 1.3f, z), new Vector3(0.1f, 2.6f, 0.1f), "DarkWood", booth, true);
+        for (int i = 0; i < 8; i++)
+        {
+            GameObject stripe = Shape("Awning", PrimitiveType.Cube, new Vector3(-1.75f + i * 0.5f, 2.65f, -0.45f), new Vector3(0.5f, 0.05f, 3.5f), i % 2 == 0 ? "ToolboxRed" : "Paint", booth);
+            stripe.transform.localRotation = Quaternion.Euler(6f, 0f, 0f);
+        }
+        Shape("Sign Board", PrimitiveType.Cube, new Vector3(0f, 2.35f, 1.25f), new Vector3(2.2f, 0.4f, 0.05f), "FreshWood", booth);
+        SignText(booth, "ТИР МАРКІЗА", new Vector3(0f, 2.35f, 1.3f), 0.024f);
+        booth.Find("Sign Text").localRotation = Quaternion.Euler(0f, 180f, 0f); // faces the farm side, where you stand
+
+        // Point at the counter to play.
+        Transform start = Group("Gallery Counter", world, GalleryPosition + new Vector3(0f, 0f, 1.15f));
+        BoxCollider hit = start.gameObject.AddComponent<BoxCollider>();
+        hit.center = new Vector3(0f, 0.75f, 0.1f);
+        hit.size = new Vector3(3.3f, 0.5f, 0.6f);
+        FarmInteractable action = start.gameObject.AddComponent<FarmInteractable>();
+        action.kind = FarmInteractable.Kind.Gallery;
+        action.label = "«Тир Маркіза»: грати";
+        Transform ring = GlowRing(start, 0.8f, 0.03f, 1f);
+        ring.localPosition = new Vector3(0f, 0.03f, 0.9f);
+        ring.gameObject.SetActive(true);
+    }
+
+    // Bunting along the farm side of the road, from Marquis's stall to the race finish (fair days only).
+    static void FairFlags()
+    {
+        Transform flags = Group("Fair Flags", world, Vector3.zero);
+        string[] colors = { "Yellow", "ToolboxRed", "Teleport", "Leaves", "Paint" };
+        const float z = -12.2f; // just at the road's edge
+        int flag = 0;
+        // two runs: around the shooting gallery's booth there's no room for posts
+        foreach (Vector2 run in new[] { new Vector2(-3f, 9f), new Vector2(14.5f, 30.5f) })
+        {
+            int spans = Mathf.RoundToInt((run.y - run.x) / 4f);
+            float step = (run.y - run.x) / spans;
+            for (int span = 0; span <= spans; span++)
+            {
+                float x = run.x + span * step;
+                Shape("Flag Post", PrimitiveType.Cube, new Vector3(x, 1.25f, z), new Vector3(0.07f, 2.5f, 0.07f), "Wood", flags);
+                if (span == spans) break;
+                for (int i = 1; i < 8; i++)
+                {
+                    float k = i / 8f;
+                    float sag = Mathf.Sin(k * Mathf.PI) * 0.3f;
+                    GameObject f = Shape("Flag", PrimitiveType.Cube, new Vector3(x + k * step, 2.35f - sag, z), new Vector3(0.18f, 0.18f, 0.01f), colors[flag++ % colors.Length], flags);
+                    f.transform.localRotation = Quaternion.Euler(0f, 0f, 45f);
+                }
+            }
+        }
+        flags.gameObject.SetActive(false);
+    }
+
+    // ---------- the cheese house (Marquis sells it after the barn opens) ----------
+    // A small hut in the left corner of the yard: 2 bottles of milk -> 1 cheese (FarmPrototype.Cheese.cs).
+    public static Vector3 CheesePosition => new Vector3(-6.3f, 0f, 4.5f);
+
+    static void CheeseHouse()
+    {
+        Transform hut = Group("Cheese House", world, CheesePosition);
+        hut.localRotation = Quaternion.Euler(0f, -90f, 0f); // its front (-z) looks into the yard (+x)
+        BoxCollider hit = hut.gameObject.AddComponent<BoxCollider>();
+        hit.center = new Vector3(0f, 1.1f, -0.2f);
+        hit.size = new Vector3(2.4f, 2.2f, 2.2f);
+        FarmInteractable action = hut.gameObject.AddComponent<FarmInteractable>();
+        action.kind = FarmInteractable.Kind.CheesePress;
+        action.label = "сироварня";
+        // every part is a direct child, so it can be built part by part
+        Shape("Walls", PrimitiveType.Cube, new Vector3(0f, 0.9f, 0.2f), new Vector3(2.2f, 1.8f, 1.8f), "House", hut);
+        GameObject roofL = Shape("Roof", PrimitiveType.Cube, new Vector3(-0.6f, 2.05f, 0.2f), new Vector3(1.5f, 0.1f, 2.2f), "Roof", hut);
+        roofL.transform.localRotation = Quaternion.Euler(0f, 0f, 30f);
+        GameObject roofR = Shape("Roof", PrimitiveType.Cube, new Vector3(0.6f, 2.05f, 0.2f), new Vector3(1.5f, 0.1f, 2.2f), "Roof", hut);
+        roofR.transform.localRotation = Quaternion.Euler(0f, 0f, -30f);
+        Piece("Chimney", PrimitiveType.Cube, new Vector3(0.55f, 2.35f, 0.6f), new Vector3(0.22f, 0.7f, 0.22f), "FarmProps/Iron", hut);
+        Piece("Door", PrimitiveType.Cube, new Vector3(-0.45f, 0.85f, -0.71f), new Vector3(0.7f, 1.5f, 0.05f), "FarmProps/DoorPaint", hut);
+        Shape("Counter", PrimitiveType.Cube, new Vector3(0.45f, 0.45f, -0.95f), new Vector3(0.9f, 0.9f, 0.5f), "Wood", hut);
+        Piece("Cheese Pot", PrimitiveType.Cylinder, new Vector3(0.45f, 1.05f, -0.95f), new Vector3(0.5f, 0.15f, 0.5f), "ArrivalArt/CoachMetal", hut);
+        Shape("Sign Board", PrimitiveType.Cube, new Vector3(0f, 1.95f, -0.73f), new Vector3(1.3f, 0.3f, 0.05f), "FreshWood", hut);
+        SignText(hut, "СИРОВАРНЯ", new Vector3(0f, 1.95f, -0.77f), 0.018f);
+        Transform ring = GlowRing(hut, 0.7f, 0.03f);
+        ring.localPosition = new Vector3(0.45f, 0.03f, -1.6f);
+        hut.gameObject.SetActive(false);
+
+        CheeseLook("Cheese Look", "Yellow");      // a wheel of cow's cheese
+        CheeseLook("Goat Cheese Look", "Paint");  // a white goat's cheese
+    }
+
+    static void CheeseLook(string name, string color)
+    {
+        Transform cheese = Group(name, world, Vector3.zero);
+        Transform model = Model(cheese, Quaternion.identity);
+        Shape("Cheese", PrimitiveType.Cylinder, new Vector3(0f, 0.04f, 0f), new Vector3(0.2f, 0.04f, 0.2f), color, model);
+        Shape("Rind", PrimitiveType.Cylinder, new Vector3(0f, 0.04f, 0f), new Vector3(0.205f, 0.03f, 0.205f), "Straw", model);
+        cheese.gameObject.SetActive(false);
+    }
+
+    // "Яєчний переполох": a sign by the coop door (the game is in FarmPrototype.EggRush.cs).
+    static void EggRushSign()
+    {
+        Transform sign = Group("Egg Rush Sign", world, CoopPosition + new Vector3(-1.6f, 0f, -2.3f));
+        BoxCollider hit = sign.gameObject.AddComponent<BoxCollider>();
+        hit.center = new Vector3(0f, 1.25f, 0f);
+        hit.size = new Vector3(1.2f, 0.9f, 0.25f);
+        FarmInteractable action = sign.gameObject.AddComponent<FarmInteractable>();
+        action.kind = FarmInteractable.Kind.EggRush;
+        action.label = "«Яєчний переполох»: грати";
+        Shape("Post", PrimitiveType.Cube, new Vector3(0f, 0.7f, 0f), new Vector3(0.08f, 1.4f, 0.08f), "Wood", sign);
+        Shape("Board", PrimitiveType.Cube, new Vector3(0f, 1.35f, -0.05f), new Vector3(1.1f, 0.4f, 0.04f), "FreshWood", sign);
+        SignText(sign, "ЯЄЧНИЙ ПЕРЕПОЛОХ", new Vector3(0f, 1.35f, -0.08f), 0.012f);
+        sign.gameObject.SetActive(false); // appears with the repaired coop
+    }
+
+    // ---------- the kitchen in grandpa's house (Marquis sells the kitchenware after the repair) ----------
+    // Point at the old stove inside: recipes that turn eggs, carrots, milk and cheese into dishes
+    // worth much more (FarmPrototype.Kitchen.cs).
+    static void Kitchen()
+    {
+        Transform stove = Group("Kitchen Stove", world, HousePosition + new Vector3(2.85f, 0f, 2.35f));
+        BoxCollider hit = stove.gameObject.AddComponent<BoxCollider>();
+        hit.center = new Vector3(0f, 0.55f, 0f);
+        hit.size = new Vector3(1f, 1.15f, 0.9f);
+        FarmInteractable action = stove.gameObject.AddComponent<FarmInteractable>();
+        action.kind = FarmInteractable.Kind.Kitchen;
+        action.label = "стара пічка";
+        Transform extras = Group("Kitchen Extras", stove, Vector3.zero);
+        Piece("Pot", PrimitiveType.Cylinder, new Vector3(0.15f, 1.16f, 0f), new Vector3(0.34f, 0.1f, 0.34f), "ArrivalArt/CoachMetal", extras);
+        Piece("Pan", PrimitiveType.Cylinder, new Vector3(-0.25f, 1.08f, -0.12f), new Vector3(0.28f, 0.015f, 0.28f), "FarmProps/Iron", extras);
+        Shape("Recipe Board", PrimitiveType.Cube, new Vector3(-1.05f, 1.65f, 0.47f), new Vector3(0.8f, 0.55f, 0.03f), "FreshWood", extras);
+        SignText(extras, "РЕЦЕПТИ", new Vector3(-1.05f, 1.82f, 0.44f), 0.014f);
+        foreach (float y in new[] { 1.7f, 1.6f, 1.5f })
+            Shape("Recipe Line", PrimitiveType.Cube, new Vector3(-1.05f, y, 0.452f), new Vector3(0.6f, 0.015f, 0.005f), "DarkWood", extras);
+        extras.gameObject.SetActive(false);
+        Transform ring = GlowRing(stove, 0.6f, 0.08f);
+        ring.localPosition = new Vector3(0f, 0.08f, -0.75f);
+
+        DishLook("Omelet Look", "Yellow", new Vector3(0.14f, 0.02f, 0.12f));
+        DishLook("Pie Look", "Ginger", new Vector3(0.15f, 0.05f, 0.15f));
+        DishLook("Syrnyky Look", "Straw", new Vector3(0.12f, 0.03f, 0.12f));
+        DishLook("Casserole Look", "ToolboxRed", new Vector3(0.14f, 0.05f, 0.1f));
+    }
+
+    static void DishLook(string name, string color, Vector3 food)
+    {
+        Transform dish = Group(name, world, Vector3.zero);
+        Transform model = Model(dish, Quaternion.identity);
+        Shape("Plate", PrimitiveType.Cylinder, new Vector3(0f, 0.01f, 0f), new Vector3(0.24f, 0.01f, 0.24f), "Paper", model);
+        Shape("Food", PrimitiveType.Cylinder, new Vector3(0f, 0.02f + food.y / 2f, 0f), new Vector3(food.x, food.y / 2f, food.z), color, model);
+        dish.gameObject.SetActive(false);
     }
 
     // ---------- helpers for textured pieces and models ----------

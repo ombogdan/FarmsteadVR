@@ -67,6 +67,7 @@ public partial class FarmPrototype
     // ---------- the parts of the farm this stage uses ----------
 
     GameObject grainSack, sackGlow, feeder, feederGrain, feederGlow;
+    FarmInteractable storageAction;
     FarmInteractable[] horseshoes;
     GameObject luckyHorseshoe;
     GameObject mound, moundGlow;
@@ -82,18 +83,20 @@ public partial class FarmPrototype
     GameObject houseBoards, houseRepairs, houseGlow;
     FarmInteractable houseAction;
 
-    int fedDay;           // the day the hens were last fed
     int horseshoesFound;  // one bit per horseshoe
     readonly int[] bedState = new int[FarmWorldBuilder.BedCount];
     readonly float[] bedGrowth = new float[FarmWorldBuilder.BedCount];
     int labelsKey = int.MinValue;
 
-    bool FedToday => dayNight != null && fedDay == dayNight.day;
+    bool FedToday => hungryDays == 0; // the hens have food (they lay eggs)
+    bool[] henGone;                   // hens that died of hunger (their place can be bought again)
 
     void FindChoreParts()
     {
         grainSack = Find("Grain Sack");
         sackGlow = grainSack.transform.Find("Glow Ring").gameObject;
+        storageAction = Find("Storage Sign").GetComponent<FarmInteractable>();
+        henGone = new bool[hens.Count];
         itemLooks["grain"] = grainSack;
         feeder = Find("Feeder");
         feederGrain = feeder.transform.Find("Feeder Grain").gameObject;
@@ -147,7 +150,7 @@ public partial class FarmPrototype
     {
         int key = inventoryVersion;
         key = key * 31 + horseshoesFound;
-        key = key * 31 + (FedToday ? 1 : 0);
+        key = key * 31 + Mathf.FloorToInt(feederKg) * 7 + hungryDays + Mathf.FloorToInt(storageKg) * 131;
         for (int i = 0; i < bedState.Length; i++) key = key * 7 + bedState[i];
         return key;
     }
@@ -157,7 +160,7 @@ public partial class FarmPrototype
         switch (stage)
         {
             case Stage.Trading:
-                return "Продавай яйця Маркізу (по " + CoinsText(EggPrice) + "). А ще Борис хоче тобі щось розповісти — поговори з ним.";
+                return "Продавай яйця Маркізу (по " + CoinsText(SellPrice("egg")) + "). А ще Борис хоче тобі щось розповісти — поговори з ним.";
             case Stage.Horseshoes:
                 return "Знайди 5 підков діда Панаса (" + FoundHorseshoes() + "/5). Біля них світяться маленькі кола. Де шукати: " + MissingHorseshoes() + ".";
             case Stage.BorisSecret:
@@ -184,8 +187,7 @@ public partial class FarmPrototype
     // One thing to do every day, shown under the main task.
     string DailyChoreText()
     {
-        if (hensBought == 0 || !dayNight.running || dayNight.IsNight || FedToday) return "";
-        return "\nЩе сьогодні: нагодуй курочок (зерно в мішку біля курника).";
+        return (IsFairDay ? "\nСьогодні ЯРМАРОК: подвійні призи в розвагах, Маркіз купує дорожче!" : "") + FoodText() + HayText();
     }
 
     // The next step in the garden, so there is always one clear thing to do.
@@ -224,9 +226,9 @@ public partial class FarmPrototype
         if (key == labelsKey) return;
         labelsKey = key;
 
-        bool hungry = stage >= Stage.WaitEggs && hensBought > 0 && dayNight.running && !night && !FedToday;
-        sackGlow.SetActive(hungry && !Has("grain"));
-        feederGlow.SetActive(hungry && Has("grain"));
+        bool low = stage >= Stage.WaitEggs && AliveHens > 0 && feederKg < AliveHens * GrainPerHen * 2f;
+        sackGlow.SetActive(low && !Has("grain"));
+        feederGlow.SetActive(low && Has("grain"));
         if (stage > Stage.RepairFence)
             goatAction.SetLabel(stage >= Stage.Garden && Has("carrot") ? "пригостити Бориса морквою" : "поговорити з Борисом");
         moundAction.SetLabel(stage == Stage.DigChest && Has("shovel") ? "копати лопатою" : "оглянути горбочок землі");
@@ -262,6 +264,31 @@ public partial class FarmPrototype
         return Has("planks") && Has("paint") ? "відремонтувати будинок (дошки + фарба)" : "відремонтувати будинок (потрібні дошки й фарба)";
     }
 
+    // ---------- water: the watering can holds water for 4 beds, the well fills it ----------
+
+    const int CanCapacity = 4;
+    int canWater = CanCapacity;
+
+    void UseWell()
+    {
+        if (!Has("can"))
+        {
+            Say("Старий колодязь із чистою водою. Знадобиться, коли матимеш лійку (вона біля бочки, біля хати).", 6f);
+            return;
+        }
+        if (canWater >= CanCapacity)
+        {
+            Say("Лійка й так повна.", 3f);
+            return;
+        }
+        canWater = CanCapacity;
+        Vector3 top = FarmWorldBuilder.WellPosition + Vector3.up * 0.9f;
+        FarmAudio.Play("water_pour", top, 1f, 0.8f);
+        Burst(top, "FarmMaterials/Glass", 10, 0.04f, Vector3.up * 2f, 0.8f);
+        Say("Лійка повна: вистачить на " + CanCapacity + " грядки.", 4f);
+        SaveGame();
+    }
+
     // A tip that is shown only the very first time.
     void SayOnce(string key, string text, float seconds)
     {
@@ -270,24 +297,69 @@ public partial class FarmPrototype
         Say(text, seconds);
     }
 
-    // ---------- feeding the hens (every day) ----------
+    // ---------- feeding the hens: grain from the storage shed into the feeder ----------
+    // The feeder holds 8 kg; every morning each hen eats 1 kg from it. If there isn't enough,
+    // the hens go hungry: no eggs, warnings, and after 3 hungry mornings in a row a hen dies.
+    // Grain comes from the storage shed by the barn (grandpa left 100 kg); more can be bought there.
+
+    bool feederUpgraded;               // the big feeder from Marquis
+    float FeederCapacity => feederUpgraded ? 20f : 8f; // kg
+    const float GrainPerHen = 1f;      // kg a day
+    const int BagSize = 10;            // how much grain you carry at once (kg)
+    float feederKg = 4f;
+    float storageKg = 100f;
+    int hungryDays;
+    bool storageWarned;
+    string morningNote = "";
+
+    int AliveHens
+    {
+        get
+        {
+            int alive = 0;
+            for (int i = 0; i < hensBought && i < hens.Count; i++) if (!henGone[i]) alive++;
+            return alive;
+        }
+    }
+
+    int FoodDaysLeft => AliveHens == 0 ? 99 : Mathf.FloorToInt(feederKg / (AliveHens * GrainPerHen));
 
     void TakeGrain()
     {
         if (stage < Stage.WaitEggs)
         {
-            Say("Мішок зерна. Ним годують курей — але курей тут поки немає.", 5f);
+            Say("Склад діда Панаса: мішки із зерном. Згодяться, коли з'являться кури.", 5f);
             return;
         }
-        if (Has("grain"))
+        int carried = ItemCount("grain");
+        if (carried >= BagSize)
         {
-            Say("Зерно вже в тебе. Насип його в годівницю перед курником.", 5f);
+            Say("У тебе вже повний мішечок зерна (" + BagSize + " кг). Неси його до годівниці перед курником!", 5f);
             return;
         }
-        AddItem("grain");
-        FarmAudio.Play("grain_pour", grainSack.transform.position + Vector3.up * 0.4f, 0.6f, 1.2f);
-        Say(FedToday ? "Зерно в тебе. Сьогодні курочки вже ситі — насиплеш завтра." : "Зерно в тебе! Тепер насип його в годівницю перед курником.", 5f);
+        if (storageKg < 1f)
+        {
+            FarmAudio.Play2D("nope", 0.6f);
+            Say("На складі не лишилось зерна! Купи ще: наведи на вивіску «СКЛАД».", 6f);
+            return;
+        }
+        int take = Mathf.Min(BagSize - carried, Mathf.FloorToInt(storageKg));
+        storageKg -= take;
+        AddItem("grain", take);
+        FarmAudio.Play("grain_pour", grainSack.transform.position + Vector3.up * 0.4f, 0.7f, 1.2f);
+        Burst(grainSack.transform.position + Vector3.up * 0.6f, "FarmProps/Grain", 8, 0.02f, Vector3.up, 0.6f);
+        ShowStorageSacks();
+        Say("+" + take + " кг зерна (на складі лишилось " + Mathf.FloorToInt(storageKg) + " кг). Неси до годівниці перед курником.", 6f);
+        WarnAboutStorage();
         SaveGame();
+    }
+
+    void WarnAboutStorage()
+    {
+        if (storageKg > 10f) { storageWarned = false; return; }
+        if (storageWarned) return;
+        storageWarned = true;
+        Say("Увага: на складі лишилось лише " + Mathf.FloorToInt(storageKg) + " кг зерна! Краще докупити — вивіска «СКЛАД», вікно «Корм».", 9f);
     }
 
     void FillFeeder()
@@ -297,36 +369,120 @@ public partial class FarmPrototype
             Say("Годівниця для курей. Поки що порожня.", 4f);
             return;
         }
-        if (FedToday)
+        if (feederKg >= FeederCapacity - 0.5f)
         {
-            Say("Курочки сьогодні вже ситі. Завтра — знову!", 4f);
-            return;
-        }
-        if (dayNight.IsNight)
-        {
-            Say("Курочки сплять. Нагодуєш їх зранку.", 4f);
+            Say("Годівниця повна (" + FeederCapacity + " кг). Курочкам вистачить на " + Plural(FoodDaysLeft, "день", "дні", "днів") + ".", 5f);
             return;
         }
         if (!Has("grain"))
         {
             FarmAudio.Play2D("nope", 0.6f);
-            Say("Спершу набери зерна з мішка біля курника.", 5f);
+            Say("Спершу набери зерна на складі — це сарай біля стодоли. Годівниця: " + Mathf.FloorToInt(feederKg) + " / " + FeederCapacity + " кг.", 6f);
             return;
         }
-        RemoveItem("grain", 1);
-        fedDay = dayNight.day;
-        feederGrain.SetActive(true);
+        int pour = Mathf.Min(Mathf.CeilToInt(FeederCapacity - feederKg), ItemCount("grain"));
+        RemoveItem("grain", pour);
+        feederKg = Mathf.Min(FeederCapacity, feederKg + pour);
+        bool wasHungry = hungryDays > 0;
+        hungryDays = 0;
+        TaskEvent("feed");
+        ShowFeederGrain();
         FarmAudio.Play("grain_pour", feeder.transform.position + Vector3.up * 0.3f, 0.9f);
         for (int k = 0; k < 6; k++) // grain pours along the trough
             Burst(feeder.transform.position + new Vector3(-0.45f + k * 0.18f, 0.75f, 0f), "FarmProps/Grain", 5, 0.02f, Vector3.down * 0.5f, 0.25f);
         CallHensToFeeder();
-        for (int i = 0; i < hensBought; i++) henNextLay[i] = Mathf.Min(henNextLay[i], Time.time + Random.Range(6f, 16f));
         if (!firstEggLaid) firstEggAt = Mathf.Min(firstEggAt, Time.time + 7f);
+        string state = "Годівниця: " + Mathf.FloorToInt(feederKg) + " / " + FeederCapacity + " кг — вистачить на " + Plural(FoodDaysLeft, "день", "дні", "днів") + ".";
         if (zhora.activeSelf)
-            SpeakerSays(zhora.transform, "Жора: Ко-ко-ко! Обід! Ситі курочки сьогодні несуться вдвічі частіше!", 5f);
-        else
-            Say("Курочки ситі! Сьогодні вони несуться вдвічі частіше.", 5f);
+            SpeakerSays(zhora.transform, wasHungry ? "Жора: Ко-ко! Нарешті обід! Тепер мої курочки знову нестимуться!" : "Жора: Ко-ко-ко! Обід! " + state, 6f);
+        else Say(state, 5f);
         SaveGame();
+    }
+
+    // The grain in the trough shows how full it is.
+    void ShowFeederGrain()
+    {
+        Transform extension = feeder.transform.Find("Feeder Extension");
+        if (extension != null)
+        {
+            extension.gameObject.SetActive(feederUpgraded);
+            Transform grain2 = extension.Find("Feeder Grain");
+            grain2.gameObject.SetActive(feederKg > 8.1f);
+            Vector3 s2 = grain2.localScale;
+            grain2.localScale = new Vector3(s2.x, Mathf.Lerp(0.015f, 0.05f, Mathf.Clamp01((feederKg - 8f) / 12f)), s2.z);
+        }
+        feederGrain.SetActive(feederKg > 0.1f);
+        Vector3 size = feederGrain.transform.localScale;
+        feederGrain.transform.localScale = new Vector3(size.x, Mathf.Lerp(0.015f, 0.05f, feederKg / FeederCapacity), size.z);
+    }
+
+    // As many sacks in the shed as there is grain (one per 20 kg).
+    void ShowStorageSacks()
+    {
+        Transform stack = grainSack.transform.Find("Model");
+        if (stack == null) return;
+        int show = Mathf.CeilToInt(storageKg / 20f);
+        for (int i = 0; i < stack.childCount; i++) stack.GetChild(i).gameObject.SetActive(i < show);
+    }
+
+    // Every morning the hens eat from the feeder. Not enough -> hungry; 3 hungry mornings -> a hen dies.
+    void ChoresOnMorning()
+    {
+        morningNote = "";
+        int eaters = AliveHens;
+        if (eaters == 0) return;
+        float need = eaters * GrainPerHen;
+        if (feederKg >= need)
+        {
+            feederKg -= need;
+            hungryDays = 0;
+            if (FoodDaysLeft == 0) morningNote = " Зерна в годівниці лишилось на один день — досип!";
+        }
+        else
+        {
+            feederKg = 0f;
+            hungryDays++;
+            if (hungryDays == 1) morningNote = " Годівниця порожня, курочки голодні й не несуться! Принеси зерна зі складу.";
+            else if (hungryDays == 2) morningNote = " Курочки голодні вже другий день і дуже ослабли! Ще день — і котрась може загинути.";
+            else HenDies();
+        }
+        ShowFeederGrain();
+    }
+
+    void HenDies()
+    {
+        int last = -1;
+        for (int i = 0; i < hensBought && i < hens.Count; i++) if (!henGone[i]) last = i;
+        if (last < 0) return;
+        henGone[last] = true;
+        string name = hens[last].GetComponent<FarmInteractable>().itemId;
+        StartCoroutine(HenLeaves(hens[last]));
+        morningNote = " Курочка " + name + " не пережила голоду... Годівниця була порожня три дні. Не забувай досипати зерно!";
+    }
+
+    IEnumerator HenLeaves(GameObject hen)
+    {
+        Transform t = hen.transform;
+        Vector3 size = t.localScale;
+        Burst(t.position + Vector3.up * 0.3f, "FarmMaterials/Paper", 10, 0.03f, Vector3.up * 1.5f, 1f); // a few feathers
+        for (float k = 0f; k < 1f; k += Time.deltaTime / 0.8f)
+        {
+            t.localScale = size * (1f - k);
+            yield return null;
+        }
+        hen.SetActive(false);
+        t.localScale = size;
+    }
+
+    // What the task panel shows about food every day.
+    string FoodText()
+    {
+        if (AliveHens == 0 || stage < Stage.WaitEggs) return "";
+        string text = "\nГодівниця: " + Mathf.FloorToInt(feederKg) + " / " + FeederCapacity + " кг • Склад: " + Mathf.FloorToInt(storageKg) + " кг зерна";
+        if (hungryDays > 0) text += "\nКурочки голодні! Принеси зерна зі складу в годівницю.";
+        else if (FoodDaysLeft <= 1) text += "\nЗерна в годівниці мало — досип зі складу.";
+        if (storageKg <= 10f) text += "\nНа складі мало зерна — докупи там же.";
+        return text;
     }
 
     // The hens run to the feeder and peck there for a while.
@@ -335,6 +491,7 @@ public partial class FarmPrototype
         Vector3 feederSpot = FarmWorldBuilder.FeederPosition;
         for (int i = 0; i < hensBought && i < henGrazers.Count; i++)
         {
+            if (henGone[i]) continue;
             float x = -0.45f + (i % 3) * 0.45f;
             float z = i < 3 ? -0.42f : 0.42f; // three in front, the rest behind
             Vector3 seat = feederSpot + new Vector3(x, 0f, z);
@@ -342,10 +499,6 @@ public partial class FarmPrototype
         }
     }
 
-    void ChoresOnMorning()
-    {
-        feederGrain.SetActive(false); // eaten: today the hens are hungry again
-    }
 
     // ---------- Boris: horseshoes, the secret, carrots ----------
 
@@ -385,7 +538,7 @@ public partial class FarmPrototype
 
     void StartHorseshoeQuest()
     {
-        string button = FarmInput.HeadsetActive ? "X" : "Tab";
+        string button = FarmInput.HeadsetActive ? "B" : "J";
         string[] lines =
         {
             "Ме-е! Ось і ти. Слухай, є справа. Секретна.",
@@ -479,6 +632,7 @@ public partial class FarmPrototype
             return;
         }
         SpeakerSays(goat, "Борис: " + BorisYum[borisTalk++ % BorisYum.Length], 4f);
+        TaskEvent("boris_carrot");
         SaveGame();
     }
 
@@ -651,8 +805,17 @@ public partial class FarmPrototype
                     Say("Треба полити. Лійка стоїть біля бочки з водою, біля хати.", 5f);
                     return;
                 }
+                if (canWater <= 0)
+                {
+                    FarmAudio.Play2D("nope", 0.6f);
+                    Say("Лійка порожня! Набери води в старому колодязі біля стежки.", 6f);
+                    return;
+                }
+                canWater--;
+                TaskEvent("water");
                 bedState[i] = (int)Bed.Growing;
                 bedGrowth[i] = 0f;
+                if (canWater == 0) Say("Вода в лійці скінчилась. Колодязь — біля стежки, недалеко від стодоли.", 6f);
                 StartCoroutine(WaterBed(bedRoots[i].position + Vector3.up * 0.38f, 2.2f)); // the can pours along the bed
                 SayOnce("#watered", "Полито! Морква росте — зазирни трохи згодом. А поки збирай яйця.", 6f);
                 break;
@@ -662,6 +825,7 @@ public partial class FarmPrototype
             case Bed.Ripe:
                 bedState[i] = (int)Bed.Clear;
                 AddItem("carrot", FarmWorldBuilder.CarrotsPerBed);
+                TaskEvent("harvest", FarmWorldBuilder.CarrotsPerBed);
                 foreach (Transform plant in bedPlants[i]) // the carrots come out of the earth and fly into your hand
                 {
                     Transform pulled = Instantiate(plant.gameObject, plant.position, plant.rotation).transform;
@@ -772,8 +936,6 @@ public partial class FarmPrototype
             Say("Для ремонту потрібні дошки й фарба — їх продає Маркіз." + have, 6f);
             return;
         }
-        RemoveItem("planks", 1);
-        RemoveItem("paint", 1);
         StartCoroutine(RepairHouseRoutine());
     }
 
@@ -789,6 +951,8 @@ public partial class FarmPrototype
         yield return PopIn(houseRepairs, 0.18f);
         FarmAudio.Play("success", front, 1f);
         FarmAudio.Play2D("coin", 0.8f);
+        RemoveItem("planks", 1);
+        RemoveItem("paint", 1);
         coins += HouseReward;
         stage = Stage.EpisodeDone;
         repairing = false;
@@ -817,7 +981,10 @@ public partial class FarmPrototype
 
     void ApplyChoreState(GameSave save)
     {
-        fedDay = save.fedDay;
+        feederKg = save.feederKg;
+        storageKg = save.storageKg;
+        hungryDays = save.hungryDays;
+        for (int i = 0; i < henGone.Length && save.henGone != null && i < save.henGone.Length; i++) henGone[i] = save.henGone[i];
         horseshoesFound = save.horseshoes;
         for (int i = 0; i < bedState.Length; i++)
         {
@@ -825,7 +992,9 @@ public partial class FarmPrototype
             bedGrowth[i] = save.bedGrowth != null && i < save.bedGrowth.Length ? save.bedGrowth[i] : 0f;
         }
 
-        feederGrain.SetActive(FedToday);
+        ShowFeederGrain();
+        ShowStorageSacks();
+        for (int i = 0; i < hensBought && i < hens.Count; i++) if (henGone[i]) hens[i].SetActive(false);
         ShowHorseshoes();
         luckyHorseshoe.SetActive(stage > Stage.BorisSecret);
         mound.SetActive(stage <= Stage.DigChest);

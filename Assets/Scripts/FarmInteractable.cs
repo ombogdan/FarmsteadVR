@@ -7,7 +7,15 @@ public class FarmInteractable : MonoBehaviour
     {
         Goat, Fence, Item, Coop, Rooster, Hen, Egg, ShopItem, SellBasket, Cat, Sleep,
         GrainSack, Feeder, Horseshoe, Mound, Chest, Bed, House, // stage 5 (FarmPrototype.Chores.cs)
-        Barn, Animal,                                            // the barn, cows and goats (FarmPrototype.Barn.cs)
+        Barn, Animal, Storage, Well, HayStack, Trough,           // the barn, animals, food, water
+        CheesePress,                                             // the cheese house (FarmPrototype.Cheese.cs)
+        Kitchen,                                                 // the kitchen in the house (FarmPrototype.Kitchen.cs)
+        CoopDoor,                                                // shut the coop at night: a fox! (FarmPrototype.Events.cs)
+        Slingshot,                                               // fun: "Курячий політ" (FarmPrototype.Slingshot.cs)
+        Race,                                                    // fun: "Перегони" (FarmPrototype.Race.cs)
+        Gallery,                                                 // fun: "Тир Маркіза" (FarmPrototype.Gallery.cs)
+        EggRush,                                                 // fun: "Яєчний переполох" (FarmPrototype.EggRush.cs)
+        RoutePost,
     }
 
     public Kind kind;

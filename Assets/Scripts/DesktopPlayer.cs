@@ -8,6 +8,7 @@ public class DesktopPlayer : MonoBehaviour
     public float walkSpeed = 4f;
     public float lookSensitivity = 2f;
 
+    FarmPrototype farm;
     float yaw;
     float pitch;
 
@@ -23,11 +24,13 @@ public class DesktopPlayer : MonoBehaviour
     void Start()
     {
         yaw = transform.eulerAngles.y;
-        LockCursor(true);
+        farm = GetComponentInParent<FarmPrototype>();
+        LockCursor(farm == null || !farm.AtMainMenu);
     }
 
     void Update()
     {
+        if (farm != null && farm.AtMainMenu) return;
         Keyboard keyboard = Keyboard.current;
         Mouse mouse = Mouse.current;
 
@@ -61,7 +64,7 @@ public class DesktopPlayer : MonoBehaviour
         transform.rotation = Quaternion.Euler(0f, yaw, 0f);
     }
 
-    static void LockCursor(bool locked)
+    public static void LockCursor(bool locked)
     {
         Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
         Cursor.visible = !locked;

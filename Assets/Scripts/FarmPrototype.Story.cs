@@ -41,7 +41,7 @@ public partial class FarmPrototype
         "Ко-ко-ко! Ряба й Біляночка — найкращі курочки району. Я сам вибирав!",
         "Тепер у мене є підлеглі. Тобто... подруги. Тобто... підлеглі подруги!",
         "Скоро будуть яйця. Кури несуться вдень, у гніздах у курнику. Директор слово дав!",
-        "Тільки спершу — обід! Зерно в мішку біля курника, годівниця — перед входом. Ситі курочки несуться вдвічі частіше!",
+        "І не забувай про обід! Зерно на складі біля стодоли, годівниця — перед входом. Голодні курочки не несуться!",
     };
     static readonly string[] ZhoraLater =
     {
@@ -88,6 +88,7 @@ public partial class FarmPrototype
         coopAction = coop.GetComponent<FarmInteractable>();
         coopCollider = coop.GetComponent<Collider>();
         coopGlow = coop.Find("Glow Ring").gameObject;
+        coopDoor = world.Find("Coop Door");
         zhora = Find("Zhora");
         zhoraGrazer = zhora.GetComponent<Grazer>();
         zhoraAction = zhora.GetComponent<FarmInteractable>();
@@ -155,6 +156,7 @@ public partial class FarmPrototype
 
     void TalkToGoat()
     {
+        if (stage >= Stage.Trading && !goatGrazer.Sleeping) TaskEvent("talk_boris"); // a side job
         if (stage < Stage.MeetBoris) // before the repair he is "just a goat"
             SpeakerSays(goat, GoatNoises[goatNoise++ % GoatNoises.Length], 3f);
         else if (stage == Stage.MeetBoris)
@@ -166,7 +168,7 @@ public partial class FarmPrototype
         else if (stage < Stage.WaitEggs)
             SpeakerSays(goat, "Борис: Цей Жора думає, що він тут головний. Ха! Головний тут я. Ме-е.", 7f);
         else if (stage == Stage.WaitEggs)
-            SpeakerSays(goat, "Борис: Нагодуй курочок — зерно в мішку біля курника. А яйця шукай у гніздах біля задньої стіни.", 7f);
+            SpeakerSays(goat, "Борис: Нагодуй курочок — зерно в мішках на складі біля стодоли. А яйця шукай у гніздах біля задньої стіни.", 7f);
         else if (!BorisChores()) // stage 5: horseshoes, the secret, carrots (FarmPrototype.Chores.cs)
             SpeakerSays(goat, "Борис: " + BorisLater[borisTalk++ % BorisLater.Length], 7f);
     }
@@ -180,9 +182,12 @@ public partial class FarmPrototype
 
     void TalkToHen(FarmInteractable hen)
     {
+        if (CatchRunaway(hen)) return; // the hen that ran away (FarmPrototype.Events.cs)
         Grazer grazer = hen.GetComponent<Grazer>();
         string sound = grazer != null && grazer.Sleeping ? "Хр-р-р..." : HenNoises[henTalk++ % HenNoises.Length];
         SpeakerSays(hen.transform, hen.itemId + ": " + sound, 3f);
+        TaskEvent("pet_hen");
+        if (grazer == null || !grazer.Sleeping) Hearts(hen.transform.position + Vector3.up * 0.6f);
     }
 
     // ---------- stage 1: the fence ----------
@@ -230,7 +235,8 @@ public partial class FarmPrototype
 
         if (System.Array.IndexOf(ToolIds, item.itemId) < 0) // not a fence tool (the watering can)
         {
-            Say(item.itemId == "can" ? "Лійка в тебе! Тепер можна поливати грядки." : name + " — у твоєму інвентарі.", 5f);
+            if (item.itemId == "can") canWater = CanCapacity;
+            Say(item.itemId == "can" ? "Лійка з водою в тебе! Її вистачить на " + CanCapacity + " грядки, потім набереш у колодязі." : name + " — у твоєму інвентарі.", 6f);
             SaveGame();
             return;
         }
@@ -310,7 +316,6 @@ public partial class FarmPrototype
             Say("На ремонт курника потрібно " + CoinsText(CoopPrice) + ", а в тебе " + CoinsText(coins) + ".", 5f);
             return;
         }
-        coins -= CoopPrice;
         FarmAudio.Play2D("coin", 0.6f);
         StartCoroutine(RepairCoop());
     }
@@ -323,11 +328,14 @@ public partial class FarmPrototype
         Say("Стук-стук! Курник ремонтується… −" + CoinsText(CoopPrice) + ".", 5f);
         yield return ShakeAway(oldCoop);
         coopCollider.enabled = false; // now you can walk in through the doorway
+        coopDoor.gameObject.SetActive(true);
+        world.Find("Egg Rush Sign").gameObject.SetActive(true);
         yield return PopIn(repairedCoop, 0.1f);
         FarmAudio.Play("success", FarmWorldBuilder.CoopPosition + Vector3.up * 1.5f, 1f);
         Say("Курник як новий! Туди можна зайти.", 3f);
         repairing = false;
 
+        coins -= CoopPrice;
         stage = Stage.MeetZhora;
         SaveGame();
         yield return new WaitForSeconds(1.2f);
@@ -557,7 +565,7 @@ public partial class FarmPrototype
 
     void ApplyStoryState()
     {
-        if (stage > Stage.Arrive && bus != null) bus.SetActive(false);
+        if (bus != null) bus.SetActive(false); // the arrival ride has already finished in a farm save
         foreach (string id in ToolIds)
             if (Has(id) && items.ContainsKey(id)) items[id].SetActive(false);
         SetToolGlow(stage == Stage.FindTools);
@@ -579,6 +587,8 @@ public partial class FarmPrototype
             oldCoop.SetActive(false);
             repairedCoop.SetActive(true);
             coopCollider.enabled = false;
+            coopDoor.gameObject.SetActive(true);
+            world.Find("Egg Rush Sign").gameObject.SetActive(true);
         }
         if (stage >= Stage.MeetZhora)
         {
@@ -601,6 +611,8 @@ public partial class FarmPrototype
     void StoryAfterLoad()
     {
         if (stage == Stage.MeetZhora) StartCoroutine(ResumeZhoraIntro());
+        if (stage == Stage.BuyHens && hensBought >= 2)
+            StartCoroutine(AfterLastHen(hens[1].GetComponent<FarmInteractable>().itemId));
         if (stage == Stage.EpisodeDone) StartCoroutine(KeyAfterLoad()); // saved before the barn existed
     }
 

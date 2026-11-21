@@ -15,8 +15,10 @@ public partial class FarmPrototype : MonoBehaviour
 {
     // Bump this number whenever FarmWorldBuilder changes. The editor sees that the saved scene
     // has an older version and rebuilds the farm by itself (no manual "Rebuild Scene" needed).
-    public const int WorldVersion = 11;
+    public const int WorldVersion = 24;
     public const string WorldVersionMarker = "World Version ";
+
+    public const int LastSaveStage = (int)Stage.RouteDone;
 
     enum Stage
     {
@@ -27,6 +29,7 @@ public partial class FarmPrototype : MonoBehaviour
         Horseshoes, BorisSecret, DigChest, OpenChest,       // stage 5
         Garden, RepairHouse, EpisodeDone,
         OpenBarn, BarnOpen,                                 // the barn, cows and goats (FarmPrototype.Barn.cs)
+        RoutePacking, RouteReply, RouteDone,
         // New stages go only at the end: saved games remember the stage as a number.
     }
 
@@ -36,7 +39,9 @@ public partial class FarmPrototype : MonoBehaviour
         { "planks", "Дошки" }, { "paint", "Фарба" }, { "shovel", "Лопата" }, { "rake", "Граблі" },
         { "grain", "Зерно" }, { "horseshoe", "Підкова" }, { "seeds", "Насіння моркви" },
         { "carrot", "Морква" }, { "can", "Лійка" }, { "barn_key", "Ключ від стодоли" },
-        { "milk", "Молоко" }, { "goat_milk", "Козяче молоко" },
+        { "milk", "Молоко" }, { "goat_milk", "Козяче молоко" }, { "golden_egg", "Золоте яйце" },
+        { "cheese", "Сир" }, { "goat_cheese", "Козячий сир" },
+        { "omelet", "Омлет" }, { "carrot_pie", "Морквяний пиріг" }, { "syrnyky", "Сирники" }, { "goat_bake", "Козяча запіканка" },
     };
 
     Transform world;
@@ -62,10 +67,8 @@ public partial class FarmPrototype : MonoBehaviour
     string message = "";
     float messageUntil;
     Transform messageSpeaker; // who says the current message (null = the game itself)
-    bool taskPanelOpen;       // short press: Tab on the Mac, X on the left controller
+    bool taskPanelOpen;       // J on Mac, B on the right controller
     bool inventoryOpen;       // I on the Mac, Y on the left controller
-    float menuDownAt = -1f;   // when the task button went down (a long hold = new game)
-    const float NewGameHold = 4f;
 
     string[] dialogue;        // the lines of the conversation going on right now
     int dialogueLine;
@@ -100,6 +103,11 @@ public partial class FarmPrototype : MonoBehaviour
         FindShopParts();
         FindChoreParts();
         FindBarnParts();
+        FindSlingshotParts();
+        FindHayParts();
+        FindCheeseParts();
+        FindKitchenParts();
+        FindRouteParts();
         dayNight = gameObject.AddComponent<DayNight>();
         dayNight.onMorning = OnMorning;
         dayNight.onEvening = OnEvening;
@@ -117,23 +125,20 @@ public partial class FarmPrototype : MonoBehaviour
 
         dayNight.Init(world.Find("Warm Sun").GetComponent<Light>(), playerCamera);
 
-        if (GameSave.TryLoad(out GameSave save) && save.stage > (int)Stage.Intro)
-            StartCoroutine(ContinueSavedGame(save));
-        else
-            StartCoroutine(PlayIntro());
+        GameSave.TryLoad(out menuSave);
     }
 
     IEnumerator PlayIntro()
     {
         IntroSequence intro = gameObject.AddComponent<IntroSequence>();
         string next = FarmInput.HeadsetActive ? "курок — далі" : "E — далі";
-        yield return intro.Run(this, playerCamera, next);
+        yield return intro.Run(this, playerCamera, next, introPage, RecordIntroPage);
         Destroy(intro);
 
         FarmInput.MovementLocked = false;
         stage = Stage.Arrive;
         StartBusLeaving();
-        string buttons = FarmInput.HeadsetActive ? "X — завдання, Y — інвентар" : "Tab — завдання, I — інвентар";
+        string buttons = FarmInput.HeadsetActive ? "X — меню, B — завдання, Y — інвентар" : "Tab — меню, J — завдання, I — інвентар";
         Say("Ось і ферма «Сидорівка»! Ходімо подивимось, що там коїться. (" + buttons + ")", 10f);
         SaveGame();
     }
@@ -143,11 +148,19 @@ public partial class FarmPrototype : MonoBehaviour
     {
         ScreenFade fade = ScreenFade.On(playerCamera);
         fade.Set(1f);
+        restoring = true;
         ApplySave(save);
         yield return null; // one frame, so the VR player is ready to be moved
-        PlacePlayer(new Vector3(1.5f, 0f, -4.5f), 0f);
+        Vector3 dest = PlayerBody.ClampToFarm(save.feet);
+        dest.y = 0f;
+        Physics.SyncTransforms();
+        hasReturnSpot = save.hasFeet && PlayerBody.CanStand(dest);
+        returnSpot = hasReturnSpot ? dest : new Vector3(1.5f, 0f, -4.5f);
+        returnYaw = hasReturnSpot ? save.yaw : 0f;
+        PlacePlayer(returnSpot, returnYaw);
         yield return null;
         FarmInput.MovementLocked = false;
+        restoring = false;
         yield return fade.FadeTo(0f, 0.8f);
         Say("З поверненням на ферму «Сидорівка»! День " + dayNight.day + ", " + dayNight.PartOfDay + ".", 6f);
         StoryAfterLoad();
@@ -168,7 +181,10 @@ public partial class FarmPrototype : MonoBehaviour
 
     void Update()
     {
+        if (AtMainMenu) { UpdateMainMenu(); return; }
+        if (changingScene || restoring) return;
         HandlePanelButtons();
+        if (changingScene) return;
         RefreshQuestText();
         WatchForNews();
         UpdateAim();
@@ -176,14 +192,39 @@ public partial class FarmPrototype : MonoBehaviour
 
         if (Time.time >= nextAutoSave)
         {
-            nextAutoSave = Time.time + 20f;
+            nextAutoSave = Time.time + 10f;
             SaveGame();
         }
         UpdateEggs();   // hens keep laying even while you talk
         UpdateGarden(); // and carrots keep growing
         UpdateBarn();   // who can be milked
+        UpdateCheese(); // the cheese house cooks
+        UpdateKitchen(); // and so does the kitchen
         RefreshChoreLabels();
         UpdateSideTasks();
+        UpdateEvents();
+
+        // The "Курячий політ" game takes over the trigger while it's on.
+        if (slingshotActive)
+        {
+            UpdateSlingshot();
+            return;
+        }
+        if (raceActive)
+        {
+            UpdateRace();
+            return;
+        }
+        if (galleryActive)
+        {
+            UpdateGallery();
+            return;
+        }
+        if (rushActive)
+        {
+            UpdateEggRush();
+            return;
+        }
 
         // While somebody talks, the trigger (anywhere) shows the next sentence.
         if (InDialogue)
@@ -196,7 +237,10 @@ public partial class FarmPrototype : MonoBehaviour
         UpdateShop();
 
         if (FarmInput.InteractPressed() && aimedAt != null)
+        {
+            RememberFarmPosition();
             Interact(aimedAt);
+        }
     }
 
     // A new stage -> "НОВЕ ЗАВДАННЯ" floats up in front of you. More coins -> "+N" jumps off the coin badge.
@@ -234,25 +278,17 @@ public partial class FarmPrototype : MonoBehaviour
         bannerAt = Time.time;
     }
 
-    // Short press of X/Tab: tasks. Y/I: inventory. Holding X/Tab for 4 seconds: a new game.
     void HandlePanelButtons()
     {
-        if (FarmInput.MenuPressed()) menuDownAt = Time.time;
-        if (menuDownAt >= 0f && FarmInput.MenuHeld() && stage != Stage.Intro)
+        if (FarmInput.MenuPressed())
         {
-            float held = Time.time - menuDownAt;
-            if (held > 0.8f && !InDialogue)
-                Say("Нова гра через " + Mathf.CeilToInt(NewGameHold - held) + "… (відпусти, щоб скасувати)", 0.2f);
-            if (held >= NewGameHold) NewGame();
+            ReturnToMenu();
+            return;
         }
-        if (FarmInput.MenuReleased())
+        if (FarmInput.TasksPressed() && !InMinigame)
         {
-            if (menuDownAt >= 0f && Time.time - menuDownAt < 0.8f)
-            {
-                taskPanelOpen = !taskPanelOpen;
-                if (taskPanelOpen) inventoryOpen = false;
-            }
-            menuDownAt = -1f;
+            taskPanelOpen = !taskPanelOpen;
+            if (taskPanelOpen) inventoryOpen = false;
         }
         if (FarmInput.InventoryPressed())
         {
@@ -261,18 +297,14 @@ public partial class FarmPrototype : MonoBehaviour
         }
     }
 
-    void NewGame()
-    {
-        GameSave.Delete();
-        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-    }
-
     void UpdateAim()
     {
         aimedAt = null;
         aimHasHit = false;
         windowAim = false;
         Transform source = aimSource != null ? aimSource : (playerCamera != null ? playerCamera.transform : null);
+        aimedAtRush = null;
+        if (slingshotActive || raceActive || galleryActive) return; // the fun games handle the trigger themselves
         if (source != null && shopWindow != null && shopWindow.IsOpen)
         {
             // The shop window is open: the laser only talks to it, nothing behind it gets in the way.
@@ -298,6 +330,7 @@ public partial class FarmPrototype : MonoBehaviour
 
         // During the intro, repairs and conversations nothing else can be used.
         if (repairing || stage == Stage.Intro || InDialogue) aimedAt = null;
+        if (rushActive) aimedAtRush = aimedAt != null && aimedAt.name == "Rush Egg" ? aimedAt : null; // the egg rush game
 
         if (aimedAt != lastAimed)
         {
@@ -334,6 +367,18 @@ public partial class FarmPrototype : MonoBehaviour
             case FarmInteractable.Kind.ShopItem: OpenShop(false); break; // the goods on the counter: the BUY menu
             case FarmInteractable.Kind.SellBasket: OpenShop(true); break; // the basket: the SELL menu
             case FarmInteractable.Kind.GrainSack: TakeGrain(); break;
+            case FarmInteractable.Kind.Storage: OpenStorage(); break;
+            case FarmInteractable.Kind.Well: UseWell(); break;
+            case FarmInteractable.Kind.CheesePress: UseCheesePress(); break;
+            case FarmInteractable.Kind.Kitchen: UseKitchen(); break;
+            case FarmInteractable.Kind.CoopDoor: UseCoopDoor(); break;
+            case FarmInteractable.Kind.HayStack: TakeHay(); break;
+            case FarmInteractable.Kind.Trough: FillTrough(); break;
+            case FarmInteractable.Kind.Slingshot: UseSlingshot(); break;
+            case FarmInteractable.Kind.Race: UseRaceSign(); break;
+            case FarmInteractable.Kind.Gallery: UseGallery(); break;
+            case FarmInteractable.Kind.RoutePost: UseRoutePost(); break;
+            case FarmInteractable.Kind.EggRush: UseEggRush(); break;
             case FarmInteractable.Kind.Feeder: FillFeeder(); break;
             case FarmInteractable.Kind.Horseshoe: PickHorseshoe(item); break;
             case FarmInteractable.Kind.Mound: DigMound(); break;
@@ -466,18 +511,66 @@ public partial class FarmPrototype : MonoBehaviour
 
     // ---------- saving ----------
 
+    void RememberFarmPosition()
+    {
+        if (!FarmInput.MovementLocked && !slingshotActive && !raceActive && !galleryActive && !rushActive)
+        {
+            Vector3 pos = playerCamera.transform.position;
+            returnSpot = new Vector3(pos.x, 0f, pos.z);
+            returnYaw = playerCamera.transform.eulerAngles.y;
+            hasReturnSpot = true;
+        }
+    }
+
     void SaveGame()
     {
-        if (stage == Stage.Intro) return;
+        if (AtMainMenu || changingScene || restoring) return;
+        if (stage == Stage.Intro)
+        {
+            new GameSave { introPage = introPage }.Store();
+            return;
+        }
+        RememberFarmPosition();
         GameSave save = new GameSave
         {
             stage = (int)stage,
+            feet = returnSpot, yaw = returnYaw, hasFeet = hasReturnSpot,
             coins = coins,
             hensBought = hensBought,
             day = dayNight.day,
             time01 = dayNight.time01,
             nests = NestState(),
-            fedDay = fedDay,
+            goldenNests = NestState(true),
+            dailyEggs = eggsToday,
+            laySeconds = System.Array.ConvertAll(henNextLay, next => Mathf.Max(0f, next - Time.time)),
+            firstEggSeconds = Mathf.Max(0f, firstEggAt - Time.time),
+            foxNightChecked = foxNightChecked, foxNews = foxNews,
+            cowPetted = cowPettedDay, goatPetted = goatPettedDay,
+            routeSentDay = routeSentDay,
+            bigHungry = bigHungry,
+            feederKg = feederKg,
+            storageKg = storageKg,
+            hungryDays = hungryDays,
+            henGone = (bool[])henGone.Clone(),
+            flightBest = bestScore,
+            flightPaid = roundsDay == dayNight.day ? roundsToday : 0,
+            racePaid = racesDay == dayNight.day ? racesToday : 0,
+            galleryPaid = galleryDay == dayNight.day ? galleryRounds : 0,
+            rushPaid = rushDay == dayNight.day ? rushRounds : 0,
+            canWater = canWater,
+            galleryBest = galleryBest,
+            rushBest = rushBest,
+            cheeseBuilt = cheeseBuilt,
+            kitchenBuilt = kitchenBuilt,
+            cooking = cooking,
+            cookProgress = cookProgress,
+            coopDoorOpen = coopDoorOpen,
+            feederUpgraded = feederUpgraded,
+            barnUpgraded = barnUpgraded,
+            cheeseBatch = cheeseBatch,
+            cheeseProgress = cheeseProgress,
+            barnHayKg = barnHayKg,
+            storageHayKg = storageHayKg,
             coopUpgraded = coopUpgraded,
             cowsBought = cowsBought,
             goatsBought = goatsBought,
@@ -508,16 +601,42 @@ public partial class FarmPrototype : MonoBehaviour
         dayNight.SetTime(save.time01, save.day);
         dayNight.running = stage >= Stage.WaitEggs;
         ApplyStoryState();
+        foxNightChecked = save.foxNightChecked;
+        foxNews = save.foxNews ?? "";
         ApplyEggState(save);
         ApplyShopState();
         ApplyChoreState(save);
+        routeSentDay = save.routeSentDay;
+        barnHayKg = save.barnHayKg;
+        storageHayKg = save.storageHayKg;
+        bigHungry = save.bigHungry;
         ApplyBarnState(save);
         LoadTasks(save);
+        roundsDay = racesDay = galleryDay = rushDay = dayNight.day;
+        roundsToday = save.flightPaid;
+        racesToday = save.racePaid;
+        galleryRounds = save.galleryPaid;
+        rushRounds = save.rushPaid;
+        bestScore = save.flightBest;
+        canWater = save.canWater;
+        galleryBest = save.galleryBest;
+        rushBest = save.rushBest;
+        feederUpgraded = save.feederUpgraded;
+        barnUpgraded = save.barnUpgraded;
+        ShowFeederGrain();
+        ApplyCheeseState(save);
+        ApplyKitchenState(save);
+        SetCoopDoor(save.coopDoorOpen, false);
     }
 
     void OnApplicationPause(bool paused)
     {
         if (paused) SaveGame(); // on the Quest: the headset was taken off or the app went to the background
+    }
+
+    void OnApplicationFocus(bool focused)
+    {
+        if (!focused) SaveGame();
     }
 
     void OnApplicationQuit()
@@ -536,9 +655,15 @@ public partial class FarmPrototype : MonoBehaviour
         key = key * 31 + hensBought;
         key = key * 31 + (night ? 1 : 0);
         key = key * 31 + ChoreKey(); // inventory, horseshoes, feeding, the garden (FarmPrototype.Chores.cs)
+        key = key * 31 + dayNight.day;
+        key = key * 31 + cowsBought;
+        key = key * 31 + goatsBought;
+        key = key * 31 + Mathf.FloorToInt(barnHayKg);
+        key = key * 31 + Mathf.FloorToInt(storageHayKg);
         key = key * 31 + tasksVersion; // side jobs (FarmPrototype.Tasks.cs)
         if (key == questKey) return;
         questKey = key;
+        ShowRoutePost();
         switch (stage)
         {
             case Stage.Intro: questText = ""; break;
@@ -552,9 +677,10 @@ public partial class FarmPrototype : MonoBehaviour
             case Stage.WaitEggs:
                 questText = FedToday
                     ? "Курочки ситі! Зайди в курник і збери яйце в гніздах біля задньої стіни."
-                    : "Нагодуй курочок: набери зерна з мішка біля курника й насип у годівницю. Потім збери яйце в гніздах у курнику.";
+                    : "Курочки голодні: набери зерна на складі (сарай біля стодоли) і досип у годівницю перед курником.";
                 break;
             case Stage.MeetMarquis: questText = "Віднеси яйця коту Маркізу — його лавка біля дороги, зліва від стежки."; break;
+            case Stage.RoutePacking: case Stage.RouteReply: case Stage.RouteDone: questText = RouteQuestText(); break;
             default: questText = ChoreQuestText(); break; // stage 5 (FarmPrototype.Chores.cs)
         }
         if (stage >= Stage.MeetMarquis) questText += DailyChoreText();
@@ -569,16 +695,18 @@ public partial class FarmPrototype : MonoBehaviour
     public string BannerText => bannerText;
     public string BannerTitle => bannerTitle;
     public float BannerAge => Time.time - bannerAt;
+    public float BannerStamp => bannerAt; // changes every time a new banner is shown
     public int CoinDelta => coinDelta;
     public float CoinDeltaAge => Time.time - coinDeltaAt;
     public string Message => message;
     public bool MessageVisible => Time.time < messageUntil; // messages fade after a few seconds
     public Transform MessageSpeaker => messageSpeaker;
+    public bool InMinigame => slingshotActive || raceActive || galleryActive || rushActive;
     public bool TaskPanelOpen => taskPanelOpen;
     public bool InventoryOpen => inventoryOpen;
     public IReadOnlyList<string> Inventory => inventory;
     public int InventoryVersion => inventoryVersion;
-    public bool AimedAtSomething => aimedAt != null || (windowAim && shopWindow.Hovering);
+    public bool AimedAtSomething => (AtMainMenu && titleBoard != null && titleBoard.Hovering) || aimedAt != null || (windowAim && shopWindow.Hovering);
     public string AimedLabel => aimedAt != null && (aimedAt.alwaysHint || !usedHints.Contains(aimedAt.label)) ? aimedAt.label : null;
     public bool AimHasHit => aimHasHit;
     public Vector3 AimPoint => aimPoint;
@@ -591,6 +719,25 @@ public partial class FarmPrototype : MonoBehaviour
         return counts.TryGetValue(id, out int n) ? n : 0;
     }
 
+    // What a thing in the backpack is for (a short hint under it).
+    public string ItemHint(string id)
+    {
+        switch (id)
+        {
+            case "hammer": case "nails": case "saw": return "лагодити";
+            case "shovel": return "копати";
+            case "rake": return "полоти грядки";
+            case "can": return "поливати";
+            case "seeds": return "садити";
+            case "grain": return "годувати курей";
+            case "planks": case "paint": return "ремонт будинку";
+            case "horseshoe": return "для Бориса";
+            case "barn_key": return "відімкнути стодолу";
+            case "carrot": return "продати / Борису";
+            default: return "продати Маркізу"; // eggs, milk
+        }
+    }
+
     public string ItemName(string id)
     {
         return ItemNames.TryGetValue(id, out string name) ? name : id;
@@ -600,6 +747,9 @@ public partial class FarmPrototype : MonoBehaviour
     public string ItemLine(string id)
     {
         int n = ItemCount(id);
+        if (id == "can") return "Лійка (вода " + canWater + "/" + CanCapacity + ")";
+        if (id == "grain") return "Зерно, " + n + " кг";
+        if (id == "hay") return "Сіно, " + n + " кг";
         return n > 1 ? ItemName(id) + " ×" + n : ItemName(id);
     }
 
@@ -613,7 +763,9 @@ public partial class FarmPrototype : MonoBehaviour
 
     void OnGUI()
     {
-        if (FarmInput.HeadsetActive || stage == Stage.Intro) return; // in VR, VrHud shows this instead
+        if (FarmInput.HeadsetActive) return;
+        if (AtMainMenu) { DrawMainMenu(); return; }
+        if (stage == Stage.Intro) return; // in VR, VrHud shows this instead
 
         GUIStyle title = new GUIStyle(GUI.skin.label) { fontSize = 23, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
         GUIStyle body = new GUIStyle(GUI.skin.label) { fontSize = 16, wordWrap = true, normal = { textColor = Color.white } };
@@ -629,18 +781,18 @@ public partial class FarmPrototype : MonoBehaviour
             GUI.Box(new Rect(16, 16, 480, 400), "");
             GUI.Label(new Rect(28, 24, 440, 30), "Завдання", title);
             GUI.Label(new Rect(28, 58, 450, 290), questText, body);
-            GUI.Label(new Rect(28, 352, 450, 60), "WASD — рух • миша — погляд • E — дія • I — інвентар\nTab — закрити • затисни Tab на 4 с — нова гра", body);
+            GUI.Label(new Rect(28, 352, 450, 60), "WASD — рух • миша — погляд • E — дія • I — інвентар\nJ — закрити • Tab — головне меню", body);
         }
         else if (inventoryOpen)
         {
             string list = inventory.Count == 0 ? "(поки порожньо)" : "";
-            foreach (string id in inventory) list += "• " + ItemLine(id) + "\n";
-            GUI.Box(new Rect(16, 16, 300, 220), "");
-            GUI.Label(new Rect(28, 24, 270, 30), "Інвентар", title);
-            GUI.Label(new Rect(28, 58, 270, 140), list, body);
-            GUI.Label(new Rect(28, 200, 270, 30), "I — закрити", body);
+            foreach (string id in inventory) list += "• " + ItemLine(id) + "  — " + ItemHint(id) + "\n";
+            GUI.Box(new Rect(16, 16, 380, 330), "");
+            GUI.Label(new Rect(28, 24, 350, 30), "Рюкзак", title);
+            GUI.Label(new Rect(28, 58, 350, 250), list, body);
+            GUI.Label(new Rect(28, 310, 350, 30), "I — закрити", body);
         }
-        else GUI.Label(new Rect(20, 16, 400, 28), "Tab — завдання   •   I — інвентар", body);
+        else GUI.Label(new Rect(20, 16, 500, 28), "Tab — меню   •   J — завдання   •   I — інвентар", body);
 
         // The "new task" banner (fades in and out at the top) and "+N" rising from the coins box.
         if (BannerAge < 3.5f)
